@@ -66,12 +66,83 @@ Opzionale: per risposte lente dell'endpoint `availableconstraint` usato da `get_
 AVAILABLECONSTRAINT_TIMEOUT_SECONDS=180
 ```
 
-## Configurazione per Claude Desktop
+## Configurazione client MCP
+
+Questo server funziona con qualsiasi client compatibile con MCP. Le sezioni seguenti coprono i più comuni.
+
+[Claude Desktop](#claude-desktop) | [Claude Code](#claude-code) | [Gemini CLI](#gemini-cli) | [VS Code](#vs-code)
+
+> In tutti gli esempi, sostituisci `/path/to/istat_mcp_server` con il percorso reale di questa directory, e `python` con `python3` se necessario sul tuo sistema.
+
+### Claude Desktop
 
 Aggiungi al file di configurazione di Claude Desktop:
 
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux**: `~/.config/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "istat": {
+      "command": "python",
+      "args": ["-m", "istat_mcp_server"],
+      "cwd": "/path/to/istat_mcp_server"
+    }
+  }
+}
+```
+
+### Claude Code
+
+**Aggiungi globalmente** (disponibile in tutti i tuoi progetti):
+
+```bash
+claude mcp add -s user istat -- python -m istat_mcp_server --cwd /path/to/istat_mcp_server
+```
+
+**Aggiungi solo per il progetto corrente** (crea o aggiorna `.mcp.json` nella cartella del progetto):
+
+```bash
+claude mcp add istat -- python -m istat_mcp_server --cwd /path/to/istat_mcp_server
+```
+
+Oppure aggiungi manualmente a `.mcp.json` nella root del tuo progetto:
+
+```json
+{
+  "mcpServers": {
+    "istat": {
+      "command": "python",
+      "args": ["-m", "istat_mcp_server"],
+      "cwd": "/path/to/istat_mcp_server"
+    }
+  }
+}
+```
+
+> `-s user` rende il server disponibile globalmente in tutti i tuoi progetti. Senza questa opzione, il server è limitato al progetto corrente.
+
+### Gemini CLI
+
+Aggiungi manualmente a `~/.gemini/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "istat": {
+      "command": "python",
+      "args": ["-m", "istat_mcp_server"],
+      "cwd": "/path/to/istat_mcp_server"
+    }
+  }
+}
+```
+
+### VS Code
+
+Aggiungi alle impostazioni utente o a `.vscode/settings.json`:
 
 ```json
 {
