@@ -72,7 +72,7 @@ AVAILABLECONSTRAINT_TIMEOUT_SECONDS=180
 
 This server works with any MCP-compatible client. The sections below cover the most common ones.
 
-[Claude Desktop](#claude-desktop) | [Claude Code](#claude-code) | [Gemini CLI](#gemini-cli) | [VS Code](#vs-code)
+[Claude Desktop](#claude-desktop) | [Claude Code](#claude-code) | [Gemini CLI](#gemini-cli) | [VS Code](#vs-code) | [Claude Desktop on Windows with Python on WSL2](#claude-desktop-on-windows-with-python-on-wsl2)
 
 > In all examples, replace `/path/to/istat_mcp_server` with the actual path to this directory, and `python` with `python3` if needed on your system.
 
@@ -157,6 +157,29 @@ Add to your User Settings or `.vscode/settings.json`:
   }
 }
 ```
+
+### Claude Desktop on Windows with Python on WSL2
+
+If you run Claude Desktop on Windows but have Python and this server installed inside WSL2, use `wsl.exe -e` to bridge the two environments. Point to the Python executable inside your virtual environment:
+
+```json
+{
+  "mcpServers": {
+    "istat": {
+      "command": "wsl.exe",
+      "args": [
+        "-e",
+        "/home/<your-user>/path/to/istat_mcp_server/.venv/bin/python",
+        "-m", "istat_mcp_server"
+      ]
+    }
+  }
+}
+```
+
+Replace `/home/<your-user>/path/to/istat_mcp_server` with the actual WSL path to this directory.
+
+> **Note:** Claude Code runs natively inside WSL2 and uses the standard configuration above. The `wsl.exe` wrapper is only needed for Claude Desktop running on the Windows side.
 
 ## Dataflow Blacklist Configuration
 
