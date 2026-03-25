@@ -8,7 +8,8 @@ from mcp.types import TextContent
 from ..api.client import ApiClient
 from ..api.models import (
     CodeValue,
-    ConstraintsOutput,
+    ConstraintsSummaryOutput,
+    DimensionConstraintSummary,
     DimensionConstraintWithDescriptions,
     GetConstraintsInput,
     TimeConstraintOutput,
@@ -194,9 +195,22 @@ async def handle_get_constraints(
         f'with {len(output_constraints)} dimensions (all cached for 1 month)'
     )
 
-    # Build final output
-    output = ConstraintsOutput(
-        id_dataflow=dataflow_id, constraints=output_constraints
+    # Build compact summary — full values stay in cache, queryable via search_constraint_values
+    summary_dims = []
+    for dim in output_constraints:
+        if isinstance(dim, TimeConstraintOutput):
+            summary_dims.append(dim)
+        else:
+            summary_dims.append(
+                DimensionConstraintSummary(
+                    dimension=dim.dimension,
+                    codelist=dim.codelist,
+                    value_count=len(dim.values),
+                )
+            )
+
+    output = ConstraintsSummaryOutput(
+        id_dataflow=dataflow_id, dimensions=summary_dims
     )
 
     return format_json_response(output)

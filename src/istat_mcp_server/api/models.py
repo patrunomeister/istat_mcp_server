@@ -171,6 +171,40 @@ class ConstraintsOutput(BaseModel):
     constraints: list[DimensionConstraintWithDescriptions | TimeConstraintOutput] = []
 
 
+class DimensionConstraintSummary(BaseModel):
+    """Compact summary of dimension constraints (count only, no values)."""
+
+    dimension: str
+    codelist: str
+    value_count: int
+
+
+class ConstraintsSummaryOutput(BaseModel):
+    """Compact constraints summary for a dataflow."""
+
+    id_dataflow: str
+    note: str = 'Use search_constraint_values to look up codes for any dimension.'
+    dimensions: list['DimensionConstraintSummary | TimeConstraintOutput'] = []
+
+
+class SearchConstraintValuesInput(BaseModel):
+    """Input for search_constraint_values tool."""
+
+    dataflow_id: str = Field(
+        ...,
+        validation_alias=AliasChoices('dataflow_id', 'id_dataflow'),
+        description="Dataflow ID (e.g., '41_983_DF_DCIS_INCIDMORFER_COM_1')",
+    )
+    dimension: str = Field(
+        ...,
+        description="Dimension ID to search (e.g., 'REF_AREA', 'SEX')",
+    )
+    search: str | None = Field(
+        None,
+        description='Optional substring to filter by code or description (case-insensitive)',
+    )
+
+
 class ConceptInfo(BaseModel):
     """Individual concept with ID and descriptions."""
 

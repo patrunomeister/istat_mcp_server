@@ -23,6 +23,7 @@ from .tools import (
     handle_get_data,
     handle_get_structure,
     handle_get_territorial_codes,
+    handle_search_constraint_values,
 )
 from .utils.tool_helpers import configure_cache_ttls
 from .utils.logging import setup_logging
@@ -216,6 +217,32 @@ def create_server() -> Server:
                 },
             ),
             Tool(
+                name='search_constraint_values',
+                description=(
+                    'Search dimension values for a dataflow. '
+                    'Call get_constraints first to populate the cache, then use this to find specific codes. '
+                    'Supports optional substring search on code or description (Italian/English).'
+                ),
+                inputSchema={
+                    'type': 'object',
+                    'properties': {
+                        'dataflow_id': {
+                            'type': 'string',
+                            'description': "Dataflow ID (e.g., '41_983_DF_DCIS_INCIDMORFER_COM_1')",
+                        },
+                        'dimension': {
+                            'type': 'string',
+                            'description': "Dimension ID to search (e.g., 'REF_AREA', 'SEX')",
+                        },
+                        'search': {
+                            'type': 'string',
+                            'description': "Optional substring to filter by code or description (case-insensitive)",
+                        },
+                    },
+                    'required': ['dataflow_id', 'dimension'],
+                },
+            ),
+            Tool(
                 name='get_cache_diagnostics',
                 description='Get diagnostic information about the cache system (path, size, keys). For debugging.',
                 inputSchema={
@@ -279,6 +306,8 @@ def create_server() -> Server:
                 result = [result_dict]
             elif name == 'get_territorial_codes':
                 result = await handle_get_territorial_codes(arguments)
+            elif name == 'search_constraint_values':
+                result = await handle_search_constraint_values(arguments, cache_manager, api_client)
             else:
                 raise ValueError(f'Unknown tool: {name}')
             
@@ -303,5 +332,5 @@ def create_server() -> Server:
             logger.info('=' * 80)
             raise
 
-    logger.info('MCP server configured with 8 tools')
+    logger.info('MCP server configured with 9 tools')
     return server
