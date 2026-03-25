@@ -255,7 +255,10 @@ def create_server() -> Server:
                 description=(
                     'Get ISTAT REF_AREA codes for a territorial level or by place name. '
                     'Use level= to get all codes for a level (italia, ripartizione, regione, provincia, comune). '
-                    'Use name= to search by place name (e.g. "Lombardia", "Puglia", "Torino").'
+                    'Use name= to search by place name (e.g. "Lombardia", "Puglia", "Torino"). '
+                    'Use region= to filter comuni/province by region name or code. '
+                    'Use province= to filter comuni by province name or code. '
+                    'Use capoluogo=true to return only comuni that are capoluogo di provincia.'
                 ),
                 inputSchema={
                     'type': 'object',
@@ -267,6 +270,18 @@ def create_server() -> Server:
                         'name': {
                             'type': 'string',
                             'description': "Place name to search (e.g. 'Lombardia', 'Puglia', 'Torino')",
+                        },
+                        'region': {
+                            'type': 'string',
+                            'description': "Filter by region name or code (e.g. 'Lombardia', 'ITC4')",
+                        },
+                        'province': {
+                            'type': 'string',
+                            'description': "Filter comuni by province name or code (e.g. 'Milano', 'ITC45')",
+                        },
+                        'capoluogo': {
+                            'type': 'boolean',
+                            'description': "If true, return only comuni that are capoluogo di provincia",
                         },
                     },
                 },
