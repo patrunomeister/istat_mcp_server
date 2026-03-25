@@ -1,4 +1,9 @@
-"""Semantic search for ISTAT dataflows using sentence-transformers embeddings."""
+"""Semantic search for ISTAT dataflows.
+
+Embedding backends (in order of preference):
+1. Ollama  — uses nomic-embed-text via local HTTP API, no extra Python deps
+2. sentence-transformers — fallback if Ollama is not reachable
+"""
 
 from __future__ import annotations
 
@@ -10,20 +15,15 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-MODEL_NAME = 'paraphrase-multilingual-MiniLM-L12-v2'
 EMBEDDINGS_CACHE_KEY = 'embeddings:dataflows:v1'
 
-_model_instance: Any = None
+# Ollama settings
+OLLAMA_BASE_URL = 'http://localhost:11434'
+OLLAMA_MODEL = 'nomic-embed-text'
 
-
-def _get_model() -> Any:
-    """Return cached SentenceTransformer model (loads once per process)."""
-    global _model_instance
-    if _model_instance is None:
-        from sentence_transformers import SentenceTransformer
-        logger.info(f'Loading SentenceTransformer model: {MODEL_NAME}')
-        _model_instance = SentenceTransformer(MODEL_NAME)
-    return _model_instance
+# sentence-transformers fallback
+ST_MODEL_NAME = 'paraphrase-multilingual-MiniLM-L12-v2'
+_st_model_instance: Any = None
 
 
 def _build_dataflow_text(df: DataflowInfo) -> str:
@@ -32,14 +32,67 @@ def _build_dataflow_text(df: DataflowInfo) -> str:
     return ' '.join(p for p in parts if p)
 
 
-def is_available() -> bool:
-    """Return True if sentence-transformers and numpy are installed."""
+# ---------------------------------------------------------------------------
+# Ollama backend
+# ---------------------------------------------------------------------------
+
+def _ollama_available() -> bool:
+    """Return True if Ollama is reachable on localhost."""
+    import httpx
+    try:
+        r = httpx.get(f'{OLLAMA_BASE_URL}/api/tags', timeout=2.0)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+def _ollama_embed(texts: list[str]) -> list[list[float]]:
+    """Call Ollama /api/embed and return list of embedding vectors."""
+    import httpx
+    response = httpx.post(
+        f'{OLLAMA_BASE_URL}/api/embed',
+        json={'model': OLLAMA_MODEL, 'input': texts},
+        timeout=60.0,
+    )
+    response.raise_for_status()
+    return response.json()['embeddings']
+
+
+# ---------------------------------------------------------------------------
+# sentence-transformers fallback
+# ---------------------------------------------------------------------------
+
+def _st_available() -> bool:
     try:
         import sentence_transformers  # noqa: F401
         import numpy  # noqa: F401
         return True
     except ImportError:
         return False
+
+
+def _st_get_model() -> Any:
+    global _st_model_instance
+    if _st_model_instance is None:
+        from sentence_transformers import SentenceTransformer
+        logger.info(f'Loading SentenceTransformer model: {ST_MODEL_NAME}')
+        _st_model_instance = SentenceTransformer(ST_MODEL_NAME)
+    return _st_model_instance
+
+
+def _st_embed(texts: list[str]) -> list[list[float]]:
+    model = _st_get_model()
+    vectors = model.encode(texts, convert_to_numpy=True, show_progress_bar=False)
+    return vectors.tolist()
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def is_available() -> bool:
+    """Return True if at least one embedding backend is available."""
+    return _ollama_available() or _st_available()
 
 
 def semantic_search(
@@ -53,42 +106,44 @@ def semantic_search(
     Args:
         query: Free-text query (can be multilingual)
         dataflows: Full list of DataflowInfo objects
-        cached_embeddings: Previously computed numpy embeddings matrix, or None
+        cached_embeddings: Previously computed embeddings (list[list[float]]), or None
         max_results: Maximum number of results to return
 
     Returns:
-        Tuple of (matched dataflows, embeddings matrix for caching)
+        Tuple of (matched dataflows, embeddings for caching)
     """
     import numpy as np
 
-    model = _get_model()
+    # Choose backend
+    use_ollama = _ollama_available()
+    backend = 'ollama' if use_ollama else 'sentence-transformers'
+    embed_fn = _ollama_embed if use_ollama else _st_embed
+
     texts = [_build_dataflow_text(df) for df in dataflows]
 
     if cached_embeddings is None:
-        logger.info('Computing dataflow embeddings (first run, will be cached)')
-        corpus_embeddings: np.ndarray = model.encode(
-            texts, convert_to_numpy=True, show_progress_bar=False
-        )
+        logger.info(f'Computing dataflow embeddings via {backend} (first run, will be cached)')
+        corpus_vecs = embed_fn(texts)
     else:
-        corpus_embeddings = np.array(cached_embeddings)
-        logger.info('Using cached dataflow embeddings')
+        corpus_vecs = cached_embeddings
+        logger.info(f'Using cached dataflow embeddings (backend: {backend})')
 
-    query_embedding: np.ndarray = model.encode(
-        [query], convert_to_numpy=True, show_progress_bar=False
-    )
+    query_vec = embed_fn([query])[0]
+
+    corpus = np.array(corpus_vecs, dtype=float)
+    q = np.array(query_vec, dtype=float)
 
     # Cosine similarity
-    norms_corpus = np.linalg.norm(corpus_embeddings, axis=1, keepdims=True)
-    norms_query = np.linalg.norm(query_embedding, axis=1, keepdims=True)
-    similarities = (corpus_embeddings / norms_corpus) @ (query_embedding / norms_query).T
-    scores: np.ndarray = similarities[:, 0]
+    norms_c = np.linalg.norm(corpus, axis=1, keepdims=True)
+    norm_q = np.linalg.norm(q)
+    scores = (corpus / norms_c) @ (q / norm_q)
 
     top_indices = np.argsort(scores)[::-1][:max_results]
     results = [dataflows[i] for i in top_indices if scores[i] > 0.1]
 
     logger.info(
-        f'Semantic search: query="{query}" → {len(results)} results '
+        f'Semantic search [{backend}]: query="{query}" → {len(results)} results '
         f'(top score={float(scores[top_indices[0]]):.3f})'
     )
 
-    return results, corpus_embeddings
+    return results, corpus_vecs
