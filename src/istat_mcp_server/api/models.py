@@ -13,6 +13,12 @@ class DiscoverDataflowsInput(BaseModel):
         '',
         description="Comma-separated keywords (e.g., 'population,employment'). Leave empty to return all dataflows.",
     )
+    max_results: int = Field(
+        10,
+        description='Maximum number of results when semantic search is active (ignored when no keywords).',
+        ge=1,
+        le=100,
+    )
 
 
 class GetStructureInput(BaseModel):
