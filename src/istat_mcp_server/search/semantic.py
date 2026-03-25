@@ -63,12 +63,24 @@ def semantic_search(
     model = _get_model()
     texts = [_build_dataflow_text(df) for df in dataflows]
 
-    if cached_embeddings is None:
-        logger.info('Computing dataflow embeddings (first run, will be cached)')
-        corpus_vecs = model.encode(texts, convert_to_numpy=True, show_progress_bar=False).tolist()
-    else:
+    use_cache = (
+        isinstance(cached_embeddings, list)
+        and len(cached_embeddings) == len(dataflows)
+    )
+
+    if use_cache:
         corpus_vecs = cached_embeddings
         logger.info('Using cached dataflow embeddings')
+    else:
+        if cached_embeddings is None:
+            logger.info('Computing dataflow embeddings (first run, will be cached)')
+        else:
+            logger.info(
+                'Cached dataflow embeddings are missing or stale; recomputing embeddings'
+            )
+        corpus_vecs = model.encode(
+            texts, convert_to_numpy=True, show_progress_bar=False
+        ).tolist()
 
     query_vec = model.encode([query], convert_to_numpy=True, show_progress_bar=False)[0]
 
