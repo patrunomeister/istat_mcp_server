@@ -68,12 +68,21 @@ Optional: for slow `availableconstraint` responses used by `get_constraints`, se
 AVAILABLECONSTRAINT_TIMEOUT_SECONDS=180
 ```
 
-## Configuration for Claude Desktop
+## MCP Client Configuration
+
+This server works with any MCP-compatible client. The sections below cover the most common ones.
+
+[Claude Desktop](#claude-desktop) | [Claude Code](#claude-code) | [Gemini CLI](#gemini-cli) | [VS Code](#vs-code) | [Claude Desktop on Windows with Python on WSL2](#claude-desktop-on-windows-with-python-on-wsl2)
+
+> In all examples, replace `/path/to/istat_mcp_server` with the actual path to this directory, and `python` with `python3` if needed on your system.
+
+### Claude Desktop
 
 Add to your Claude Desktop configuration file:
 
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux**: `~/.config/Claude/claude_desktop_config.json`
 
 ```json
 {
@@ -87,7 +96,90 @@ Add to your Claude Desktop configuration file:
 }
 ```
 
-Replace `/path/to/istat_mcp_server` with the actual path to this directory.
+### Claude Code
+
+**Add globally** (available in all your projects):
+
+```bash
+claude mcp add -s user istat -- python -m istat_mcp_server --cwd /path/to/istat_mcp_server
+```
+
+**Add for the current project only** (creates or updates `.mcp.json` in the project folder):
+
+```bash
+claude mcp add istat -- python -m istat_mcp_server --cwd /path/to/istat_mcp_server
+```
+
+Or add manually to `.mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "istat": {
+      "command": "python",
+      "args": ["-m", "istat_mcp_server"],
+      "cwd": "/path/to/istat_mcp_server"
+    }
+  }
+}
+```
+
+> `-s user` makes the server available globally across all your projects. Without it, the server is scoped to the current project only.
+
+### Gemini CLI
+
+Add manually to `~/.gemini/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "istat": {
+      "command": "python",
+      "args": ["-m", "istat_mcp_server"],
+      "cwd": "/path/to/istat_mcp_server"
+    }
+  }
+}
+```
+
+### VS Code
+
+Add to your User Settings or `.vscode/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "istat": {
+      "command": "python",
+      "args": ["-m", "istat_mcp_server"],
+      "cwd": "/path/to/istat_mcp_server"
+    }
+  }
+}
+```
+
+### Claude Desktop on Windows with Python on WSL2
+
+If you run Claude Desktop on Windows but have Python and this server installed inside WSL2, use `wsl.exe -e` to bridge the two environments. Point to the Python executable inside your virtual environment:
+
+```json
+{
+  "mcpServers": {
+    "istat": {
+      "command": "wsl.exe",
+      "args": [
+        "-e",
+        "/home/<your-user>/path/to/istat_mcp_server/.venv/bin/python",
+        "-m", "istat_mcp_server"
+      ]
+    }
+  }
+}
+```
+
+Replace `/home/<your-user>/path/to/istat_mcp_server` with the actual WSL path to this directory.
+
+> **Note:** Claude Code runs natively inside WSL2 and uses the standard configuration above. The `wsl.exe` wrapper is only needed for Claude Desktop running on the Windows side.
 
 ## Dataflow Blacklist Configuration
 
