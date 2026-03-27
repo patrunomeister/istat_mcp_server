@@ -127,6 +127,7 @@ async def handle_get_territorial_codes(arguments: dict[str, Any]) -> list[TextCo
         logger.info(f'get_territorial_codes: province={province} → {province_code_filter}')
 
     # --- Apply filters ---
+    name_lower = name.lower() if name else ''
     result = []
     for r in rows:
         row_level = r['level']
@@ -136,7 +137,7 @@ async def handle_get_territorial_codes(arguments: dict[str, Any]) -> list[TextCo
             continue
 
         # Name filter
-        if name and name.lower() not in r['name_it'].lower():
+        if name_lower and name_lower not in r['name_it'].lower():
             continue
 
         # Region filter (for comuni: parent_code must be in province_codes_filter)
