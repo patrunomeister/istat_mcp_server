@@ -107,9 +107,10 @@ def create_server() -> Server:
                 name='check_code_exists',
                 description=(
                     'Check if one or more codes exist for a given dimension in a specific dataflow. '
-                    'Uses a minimal data request (lastNObservations=1) to verify existence without downloading data. '
+                    'Uses available constraint metadata (no data observations are downloaded) to verify existence. '
                     'Returns true/false for each code. Useful for verifying territorial codes (REF_AREA), '
-                    'age groups (AGE), sex codes (SEX), or any other dimension before calling get_data.'
+                    'age groups (AGE), sex codes (SEX), or any other dimension before calling get_data. '
+                    'Note: TIME_PERIOD cannot be checked with this tool — use get_constraints for the time range.'
                 ),
                 inputSchema={
                     'type': 'object',

@@ -98,7 +98,7 @@ def get_observed_data_cache_ttl() -> int:
     return OBSERVED_DATA_CACHE_TTL
 
 
-def format_toon_dataflows(dataflows: list) -> list[TextContent]:
+def format_toon_dataflows(dataflows: list[DataflowInfo]) -> list[TextContent]:
     """Format dataflows as TOON (Token-Oriented Object Notation).
 
     Includes only id, name_it, description_it to minimise token usage.

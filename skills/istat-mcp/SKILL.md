@@ -27,17 +27,18 @@ Always follow the **3-step workflow** below. Never skip steps.
 ### Step 1 — `discover_dataflows`
 
 Search for relevant dataflows. The tool performs **keyword search** across dataflow IDs, names,
-descriptions, and data structure IDs, returning a JSON list of matches.
+descriptions, and data structure IDs, returning results in compact TOON (Token-Oriented Object
+Notation) text format: one dataflow per line with `id`, `name_it`, `description_it`.
 
 Your job: read the results and pick the most relevant dataflow ID for the user's request.
-Prefer dataflows whose `name_it`/`name_en` directly match the topic.
+Prefer dataflows whose `name_it` directly matches the topic.
 
 ```
-discover_dataflows(keywords="disoccupazione regioni")
+discover_dataflows(keywords="disoccupazione,regioni")
 ```
 
 Parameters:
-- `keywords`: free text, Italian or English — split into individual tokens and matched against all fields
+- `keywords`: comma-separated terms, Italian or English — each token is matched independently against all fields
 
 #### Fallback — when results are not relevant
 
@@ -323,7 +324,7 @@ Do not retry a call that appears to be hanging — it is likely queued behind th
 
 ### Regional data for all Italy
 ```
-1. discover_dataflows(keywords="tasso disoccupazione regionale")
+1. discover_dataflows(keywords="tasso disoccupazione,regionale")
 2. get_constraints(dataflow_id="...")      # confirm REF_AREA has ITC1–ITG2
 3. get_territorial_codes(level="regione") # get all 21 region codes
 4. get_data(id_dataflow="...", dimension_filters={

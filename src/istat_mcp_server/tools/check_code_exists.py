@@ -6,7 +6,7 @@ from typing import Any
 from mcp.types import TextContent
 
 from ..api.client import ApiClient
-from ..api.models import ConstraintValue
+from ..api.models import ConstraintValue, TimeConstraintValue
 from ..cache.manager import CacheManager
 from ..utils.tool_helpers import (
     format_json_response,
@@ -50,6 +50,14 @@ async def handle_check_code_exists(
     if not codes:
         return format_json_response({'error': "Missing 'codes'"})
 
+    if dimension == 'TIME_PERIOD':
+        return format_json_response({
+            'error': (
+                "TIME_PERIOD is a range dimension and cannot be checked with this tool. "
+                "Use get_constraints to retrieve the available StartPeriod/EndPeriod range."
+            )
+        })
+
     if isinstance(codes, str):
         codes = [c.strip() for c in codes.split(',')]
 
@@ -72,7 +80,8 @@ async def handle_check_code_exists(
             'available_dimensions': available,
         })
 
-    # Build set of valid codes for this dimension
+    # Build set of valid codes for this dimension (ConstraintValue only;
+    # TimeConstraintValue entries are range-based and handled above)
     valid_codes = {
         v.value for v in dim_constraint.values if isinstance(v, ConstraintValue)
     }
