@@ -475,6 +475,12 @@ async def handle_get_data(
                     'response prefix=%r',
                     response_prefix,
                 )
+        if not time_period_end:
+            logger.warning(
+                'get_data: TIME_PERIOD still unavailable after targeted fetch for %s; '
+                'falling back to previous-year default (may cause 404)',
+                params.id_dataflow,
+            )
 
     # Step 2: Determine start/end periods
     # If user didn't specify periods, use the last year from TIME_PERIOD range

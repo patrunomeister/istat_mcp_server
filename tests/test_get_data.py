@@ -1,8 +1,13 @@
 """Tests for get_data tool helpers, including filter_tsv_by_time_period."""
 
-import pytest
+import json
 
-from istat_mcp_server.tools.get_data import _parse_period, filter_tsv_by_time_period
+import pytest
+from mcp.types import TextContent
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from istat_mcp_server.api.models import DataflowInfo
+from istat_mcp_server.tools.get_data import _parse_period, filter_tsv_by_time_period, handle_get_data
 
 
 # ---------------------------------------------------------------------------
@@ -283,3 +288,189 @@ class TestFilterTsvByTimePeriod:
         tsv = '\t'.join(HEADER) + '\nDF\tA'  # only 2 columns, TIME_PERIOD at idx 2 missing
         result = filter_tsv_by_time_period(tsv, None, '2023')
         assert 'DF\tA' in result
+
+
+# ---------------------------------------------------------------------------
+# handle_get_data – TIME_PERIOD fallback (targeted second call)
+# ---------------------------------------------------------------------------
+
+_DATAFLOW_ID = 'TEST_DF_HIGH_CARDINALITY'
+
+# Constraints JSON without TIME_PERIOD: simulates the high-cardinality codelist path
+_CONSTRAINTS_NO_TIME_PERIOD = json.dumps({
+    'id_dataflow': _DATAFLOW_ID,
+    'dimensions': [
+        {'dimension': 'FREQ', 'codelist': 'CL_FREQ', 'value_count': 1},
+        {'dimension': 'REF_AREA', 'codelist': 'CL_ITTER107', 'value_count': 11578},
+    ],
+})
+
+# Targeted TIME_PERIOD-only constraints JSON returned by the second call
+_CONSTRAINTS_TIME_PERIOD_ONLY = json.dumps({
+    'id_dataflow': _DATAFLOW_ID,
+    'dimensions': [
+        {
+            'dimension': 'TIME_PERIOD',
+            'StartPeriod': '2010-01-01T00:00:00',
+            'EndPeriod': '2022-12-31T23:59:59',
+        }
+    ],
+})
+
+# Minimal dataflow list used across tests
+_MOCK_DATAFLOWS = [
+    DataflowInfo(
+        id=_DATAFLOW_ID,
+        name_it='Test',
+        name_en='Test',
+        description_it='',
+        description_en='',
+        version='1.0',
+        agency='IT1',
+        id_datastructure='TEST_DS',
+        last_update='',
+    )
+]
+
+
+def _make_blacklist(blacklisted: bool = False) -> MagicMock:
+    bl = MagicMock()
+    bl.is_blacklisted.return_value = blacklisted
+    return bl
+
+
+class TestHandleGetDataTimePeriodFallback:
+    """Tests for the TIME_PERIOD targeted-fetch fallback in handle_get_data."""
+
+    @pytest.mark.asyncio
+    async def test_targeted_fetch_performed_and_end_period_used(
+        self, mock_cache_manager, mock_api_client
+    ):
+        """When initial constraints lack TIME_PERIOD, a targeted fetch is done
+        and its EndPeriod drives the default start/end period selection."""
+        constraints_calls: list[dict] = []
+
+        async def mock_get_constraints(arguments, cache, api):
+            constraints_calls.append(dict(arguments))
+            if arguments.get('dimensions') == ['TIME_PERIOD']:
+                return [TextContent(type='text', text=_CONSTRAINTS_TIME_PERIOD_ONLY)]
+            return [TextContent(type='text', text=_CONSTRAINTS_NO_TIME_PERIOD)]
+
+        # cache.get_or_fetch returns a dummy string (parse_sdmx_to_table is mocked out)
+        mock_cache_manager.get_or_fetch.return_value = '<xml/>'
+
+        with (
+            patch(
+                'istat_mcp_server.tools.get_data.handle_get_constraints',
+                side_effect=mock_get_constraints,
+            ),
+            patch(
+                'istat_mcp_server.tools.get_data.get_cached_dataflows',
+                return_value=_MOCK_DATAFLOWS,
+            ),
+            patch(
+                'istat_mcp_server.tools.get_data.parse_sdmx_to_table',
+                return_value='col\n',
+            ),
+        ):
+            await handle_get_data(
+                arguments={'id_dataflow': _DATAFLOW_ID},
+                cache=mock_cache_manager,
+                api=mock_api_client,
+                blacklist=_make_blacklist(),
+            )
+
+        # A targeted TIME_PERIOD fetch must have been issued
+        assert any(
+            c.get('dimensions') == ['TIME_PERIOD'] for c in constraints_calls
+        ), 'Expected a targeted TIME_PERIOD get_constraints call'
+
+        # The data cache key must contain '2022_2022' derived from EndPeriod '2022-12-31T23:59:59'
+        data_keys = [
+            c.kwargs.get('key', '')
+            for c in mock_cache_manager.get_or_fetch.call_args_list
+        ]
+        assert any('2022_2022' in k for k in data_keys), (
+            f'Expected data cache key to contain "2022_2022", got keys: {data_keys}'
+        )
+
+    @pytest.mark.asyncio
+    async def test_warning_logged_when_targeted_fetch_still_returns_no_time_period(
+        self, mock_cache_manager, mock_api_client, caplog
+    ):
+        """When even the targeted TIME_PERIOD fetch returns no TIME_PERIOD,
+        a warning is logged and the previous-year fallback is used."""
+        import logging
+
+        async def mock_get_constraints(arguments, cache, api):
+            # Both calls return constraints without TIME_PERIOD
+            return [TextContent(type='text', text=_CONSTRAINTS_NO_TIME_PERIOD)]
+
+        mock_cache_manager.get_or_fetch.return_value = '<xml/>'
+
+        with (
+            patch(
+                'istat_mcp_server.tools.get_data.handle_get_constraints',
+                side_effect=mock_get_constraints,
+            ),
+            patch(
+                'istat_mcp_server.tools.get_data.get_cached_dataflows',
+                return_value=_MOCK_DATAFLOWS,
+            ),
+            patch(
+                'istat_mcp_server.tools.get_data.parse_sdmx_to_table',
+                return_value='col\n',
+            ),
+            caplog.at_level(logging.WARNING, logger='istat_mcp_server.tools.get_data'),
+        ):
+            await handle_get_data(
+                arguments={'id_dataflow': _DATAFLOW_ID},
+                cache=mock_cache_manager,
+                api=mock_api_client,
+                blacklist=_make_blacklist(),
+            )
+
+        assert any(
+            'TIME_PERIOD still unavailable' in r.message for r in caplog.records
+        ), 'Expected warning about TIME_PERIOD still being unavailable'
+
+    @pytest.mark.asyncio
+    async def test_warning_logged_on_targeted_fetch_json_decode_error(
+        self, mock_cache_manager, mock_api_client, caplog
+    ):
+        """When the targeted TIME_PERIOD fetch returns non-JSON, a warning is logged."""
+        import logging
+
+        async def mock_get_constraints(arguments, cache, api):
+            if arguments.get('dimensions') == ['TIME_PERIOD']:
+                return [TextContent(type='text', text='not valid json {{{{')]
+            return [TextContent(type='text', text=_CONSTRAINTS_NO_TIME_PERIOD)]
+
+        mock_cache_manager.get_or_fetch.return_value = '<xml/>'
+
+        with (
+            patch(
+                'istat_mcp_server.tools.get_data.handle_get_constraints',
+                side_effect=mock_get_constraints,
+            ),
+            patch(
+                'istat_mcp_server.tools.get_data.get_cached_dataflows',
+                return_value=_MOCK_DATAFLOWS,
+            ),
+            patch(
+                'istat_mcp_server.tools.get_data.parse_sdmx_to_table',
+                return_value='col\n',
+            ),
+            caplog.at_level(logging.WARNING, logger='istat_mcp_server.tools.get_data'),
+        ):
+            await handle_get_data(
+                arguments={'id_dataflow': _DATAFLOW_ID},
+                cache=mock_cache_manager,
+                api=mock_api_client,
+                blacklist=_make_blacklist(),
+            )
+
+        assert any(
+            'Failed to parse targeted TIME_PERIOD constraints JSON' in r.message
+            for r in caplog.records
+        ), 'Expected warning about JSON decode failure'
