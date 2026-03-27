@@ -452,11 +452,28 @@ async def handle_get_data(
     if time_period_start and time_period_end:
         logger.info(f'get_data: TIME_PERIOD range: {time_period_start} to {time_period_end}')
 
+    # If TIME_PERIOD not available (high-cardinality codelist path), fetch it with a targeted call
+    if not time_period_end:
+        logger.info(f'get_data: TIME_PERIOD missing from constraints (codelist path), fetching targeted')
+        tp_response = await handle_get_constraints(
+            arguments={'dataflow_id': params.id_dataflow, 'dimensions': ['TIME_PERIOD']},
+            cache=cache,
+            api=api,
+        )
+        if tp_response and tp_response[0].text:
+            try:
+                tp_data = json.loads(tp_response[0].text)
+                _, time_period_start, time_period_end = _extract_constraints_info(tp_data)
+                if time_period_end:
+                    logger.info(f'get_data: TIME_PERIOD fetched: {time_period_start} to {time_period_end}')
+            except json.JSONDecodeError:
+                pass
+
     # Step 2: Determine start/end periods
     # If user didn't specify periods, use the last year from TIME_PERIOD range
     start_period = params.start_period
     end_period = params.end_period
-    
+
     if not start_period and not end_period:
         start_period, end_period = _determine_default_periods(time_period_end)
     
