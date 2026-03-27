@@ -35,6 +35,24 @@ This Model Context Protocol (MCP) server provides Claude Desktop with access to 
   - Then call `get_codelist_description` manually for each codelist you need
   - Use `get_concepts` if you need semantic definitions of dimensions/attributes
 
+- **Progressive Discovery**: SDMX metadata responses can be large — dataflows with many dimensions and codelists can exceed 100KB, overwhelming LLM context windows. Use a layered approach to keep each step small:
+
+  | Step | Tool | What you get | Approx. size |
+  |------|------|--------------|--------------|
+  | 1 | `discover_dataflows` | IDs + names matching keywords | 1–5 KB |
+  | 2a | `get_constraints` *(no filter)* | All dimensions + valid values + descriptions | 5–50 KB |
+  | 2b | `get_constraints` *(with `dimensions`)* | Only the dimensions you specify | 0.5–5 KB |
+  | 3 | `search_constraint_values` | Filtered codes within one dimension | ~1 KB |
+  | 4 | `get_data` | Actual data table | varies |
+
+  When you only need one or two dimensions, use the `dimensions` parameter to keep responses small:
+
+  ```
+  get_constraints(dataflow_id="101_1015_DF_DCSP_COLTIVAZIONI_1", dimensions=["REF_AREA"])
+  ```
+
+  All results are cached for 1 month, so a targeted call now costs nothing on the next full query.
+
 - **Two-Layer Cache**:
   - In-memory cache (cachetools) for fast access during session
   - Persistent disk cache (diskcache) that survives restarts

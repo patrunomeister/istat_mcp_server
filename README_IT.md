@@ -8,7 +8,7 @@ Questo server Model Context Protocol (MCP) fornisce a Claude Desktop accesso ai 
 
 ## Funzionalita
 
-- **7 tool MCP** per scoperta e recupero dati:
+- **9 tool MCP** per scoperta e recupero dati:
   - `discover_dataflows` - Trova dataset disponibili tramite keyword (con filtro blacklist)
   - `get_structure` - Ottiene definizioni delle dimensioni e codelist per un ID di datastructure
   - `get_constraints` - Ottiene valori di vincolo disponibili per ogni dimensione con descrizioni (combina struttura + vincoli + descrizioni codelist)
@@ -16,6 +16,8 @@ Questo server Model Context Protocol (MCP) fornisce a Claude Desktop accesso ai 
   - `get_concepts` - Ottiene definizioni semantiche dei concetti SDMX
   - `get_data` - Recupera dati statistici in formato SDMXXML (con validazione blacklist)
   - `get_cache_diagnostics` - Tool di debug per ispezionare stato cache
+  - `search_constraint_values` - Cerca codici per una dimensione specifica (con filtro per nome opzionale)
+  - `get_territorial_codes` - Ottiene codici territoriali ISTAT per livello (comune, provincia, regione, ripartizione)
 
 - **Workflow consigliato** (semplice ed efficiente):
   1. **Scopri**: usa `discover_dataflows` per trovare il dataflow di interesse
@@ -30,6 +32,24 @@ Questo server Model Context Protocol (MCP) fornisce a Claude Desktop accesso ai 
   - Usa `get_structure` con un ID di datastructure per vedere dimensioni e codelist associate
   - Poi chiama `get_codelist_description` manualmente per ogni codelist necessaria
   - Usa `get_concepts` se hai bisogno di definizioni semantiche di dimensioni/attributi
+
+- **Progressive Discovery**: Le risposte ai metadati SDMX possono essere grandi — dataflow con molte dimensioni e codelist ampie possono superare i 100KB, saturando il context window degli LLM. Usa un approccio a strati per mantenere ogni passo leggero:
+
+  | Passo | Tool | Cosa ottieni | Dimensione indicativa |
+  |-------|------|--------------|----------------------|
+  | 1 | `discover_dataflows` | ID + nomi che corrispondono alle keyword | 1–5 KB |
+  | 2a | `get_constraints` *(senza filtro)* | Tutte le dimensioni + valori validi + descrizioni | 5–50 KB |
+  | 2b | `get_constraints` *(con `dimensions`)* | Solo le dimensioni specificate | 0.5–5 KB |
+  | 3 | `search_constraint_values` | Codici filtrati in una sola dimensione | ~1 KB |
+  | 4 | `get_data` | Tabella dati osservati | variabile |
+
+  Quando ti servono una o due dimensioni, usa il parametro `dimensions` per tenere le risposte piccole:
+
+  ```
+  get_constraints(dataflow_id="101_1015_DF_DCSP_COLTIVAZIONI_1", dimensions=["REF_AREA"])
+  ```
+
+  Tutti i risultati sono in cache per 1 mese, quindi una chiamata mirata ora non costa nulla alla prossima query completa.
 
 - **Cache a due livelli**:
   - Cache in memoria (cachetools) per accesso rapido durante la sessione
