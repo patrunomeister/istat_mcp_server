@@ -10,7 +10,7 @@ This Model Context Protocol (MCP) server provides Claude Desktop with access to 
 
 ## Features
 
-- **7 MCP Tools** for data discovery and retrieval:
+- **9 MCP Tools** for data discovery and retrieval:
   - `discover_dataflows` - Find available datasets by keywords (with blacklist filtering)
   - `get_structure` - Get dimension definitions and codelists for a datastructure ID
   - `get_constraints` - Get available constraint values for each dimension with descriptions (combines structure + constraints + codelist descriptions)
@@ -18,6 +18,8 @@ This Model Context Protocol (MCP) server provides Claude Desktop with access to 
   - `get_concepts` - Get semantic definitions of SDMX concepts
   - `get_data` - Fetch actual statistical data in SDMXXML format (with blacklist validation)
   - `get_cache_diagnostics` - Debug tool to inspect cache status
+  - `search_constraint_values` - Search codes for a specific dimension (with optional name filter)
+  - `get_territorial_codes` - Get ISTAT territorial codes by level (comune, provincia, regione, ripartizione)
 
 - **Recommended Workflow** (simple and efficient):
   1. **Discover**: Use `discover_dataflows` to find the dataflow you're interested in
@@ -51,7 +53,18 @@ git clone <repository-url>
 cd istat_mcp_server
 ```
 
-2. Create a virtual environment and install dependencies:
+2. Create a virtual environment and install dependencies (Python >=3.11 required):
+
+**With uv (recommended):**
+```bash
+uv sync
+```
+`uv sync` automatically creates a `.venv` directory and installs all dependencies into it. To run commands manually, activate it first:
+```bash
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+```
+
+**With pip:**
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
@@ -72,7 +85,7 @@ AVAILABLECONSTRAINT_TIMEOUT_SECONDS=180
 
 This server works with any MCP-compatible client. The sections below cover the most common ones.
 
-[Claude Desktop](#claude-desktop) | [Claude Code](#claude-code) | [Gemini CLI](#gemini-cli) | [VS Code](#vs-code) | [Claude Desktop on Windows with Python on WSL2](#claude-desktop-on-windows-with-python-on-wsl2)
+[Claude Desktop](#claude-desktop) | [Claude Code](#claude-code) | [Gemini CLI](#gemini-cli) | [VS Code](#vs-code) | [Codex CLI](#codex-cli) | [Claude Desktop on Windows with Python on WSL2](#claude-desktop-on-windows-with-python-on-wsl2)
 
 > In all examples, replace `/path/to/istat_mcp_server` with the actual path to this directory, and `python` with `python3` if needed on your system.
 
@@ -128,7 +141,13 @@ Or add manually to `.mcp.json` in your project root:
 
 ### Gemini CLI
 
-Add manually to `~/.gemini/settings.json`:
+**Add globally:**
+
+```bash
+gemini mcp add -s user istat -- python -m istat_mcp_server --cwd /path/to/istat_mcp_server
+```
+
+Or add manually to `~/.gemini/settings.json`:
 
 ```json
 {
@@ -156,6 +175,17 @@ Add to your User Settings or `.vscode/settings.json`:
     }
   }
 }
+```
+
+### Codex CLI
+
+Add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.istat]
+command = "python"
+args = ["-m", "istat_mcp_server"]
+cwd = "/path/to/istat_mcp_server"
 ```
 
 ### Claude Desktop on Windows with Python on WSL2
