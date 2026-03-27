@@ -5,6 +5,7 @@ import pytest
 from istat_mcp_server.cache.manager import CacheManager
 from istat_mcp_server.cache.memory import MemoryCache
 from istat_mcp_server.cache.persistent import PersistentCache
+from istat_mcp_server.utils.tool_helpers import METADATA_CACHE_TTL
 
 
 def test_memory_cache_basic(memory_cache):
@@ -70,3 +71,37 @@ async def test_cache_manager_get_or_fetch(cache_manager):
     value2 = await cache_manager.get_or_fetch('key1', fetch_func, persistent_ttl=3600)
     assert value2 == 'value_1'
     assert fetch_count == 1  # Not incremented
+
+
+def test_metadata_ttl_is_one_month():
+    """METADATA_CACHE_TTL must equal 30 days (2592000 seconds)."""
+    assert METADATA_CACHE_TTL == 30 * 24 * 3600
+
+
+@pytest.mark.asyncio
+async def test_get_or_fetch_serves_from_persistent_after_memory_clear(cache_manager):
+    """After memory cache is cleared (simulating a restart), data is still served
+    from the persistent cache without calling the fetch function again."""
+    fetch_count = 0
+
+    async def fetch_func():
+        nonlocal fetch_count
+        fetch_count += 1
+        return 'expensive_value'
+
+    # First call — fetches from source and caches in both layers
+    value1 = await cache_manager.get_or_fetch(
+        'test_key', fetch_func, persistent_ttl=METADATA_CACHE_TTL
+    )
+    assert value1 == 'expensive_value'
+    assert fetch_count == 1
+
+    # Simulate server restart by clearing memory cache
+    cache_manager._memory.clear()
+
+    # Second call — must be served from persistent cache, not re-fetched
+    value2 = await cache_manager.get_or_fetch(
+        'test_key', fetch_func, persistent_ttl=METADATA_CACHE_TTL
+    )
+    assert value2 == 'expensive_value'
+    assert fetch_count == 1  # API not called again

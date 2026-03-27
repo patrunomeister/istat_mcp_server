@@ -249,3 +249,55 @@ async def test_get_constraints_missing_codelist(
     assert len(result) == 1
     assert result[0].type == 'text'
     assert 'error' in result[0].text.lower() or 'Codelist not found' in result[0].text
+
+
+@pytest.mark.asyncio
+async def test_get_constraints_api_called_only_once(cache_manager, mock_api_client):
+    """Second call to get_constraints is served entirely from cache — API not invoked again."""
+    dataflow_id = '101_1015_DF_DCSP_COLTIVAZIONI_1'
+
+    mock_api_client.fetch_dataflows.return_value = [
+        DataflowInfo(
+            id=dataflow_id,
+            name_it='Coltivazioni',
+            name_en='Crops',
+            description_it='',
+            description_en='',
+            version='1.0',
+            agency='IT1',
+            id_datastructure='DCSP_COLTIVAZIONI',
+            last_update='',
+        )
+    ]
+    mock_api_client.fetch_datastructure.return_value = DatastructureInfo(
+        id_datastructure='DCSP_COLTIVAZIONI',
+        dimensions=[DimensionInfo(dimension='FREQ', codelist='CL_FREQ')],
+    )
+    mock_api_client.fetch_constraints.return_value = ConstraintInfo(
+        id=dataflow_id,
+        dimensions=[
+            DimensionConstraint(
+                dimension='FREQ', values=[ConstraintValue(value='A')]
+            )
+        ],
+    )
+    mock_api_client.fetch_codelist.return_value = CodelistInfo(
+        id_codelist='CL_FREQ',
+        values=[CodeValue(code='A', description_en='Annual', description_it='Annuale')],
+    )
+
+    arguments = {'dataflow_id': dataflow_id}
+
+    # First call — hits API
+    result1 = await handle_get_constraints(arguments, cache_manager, mock_api_client)
+    assert result1[0].type == 'text'
+
+    # Second call — must be served from cache
+    result2 = await handle_get_constraints(arguments, cache_manager, mock_api_client)
+    assert result2[0].text == result1[0].text
+
+    # Each API method called exactly once across both tool invocations
+    assert mock_api_client.fetch_dataflows.call_count == 1
+    assert mock_api_client.fetch_datastructure.call_count == 1
+    assert mock_api_client.fetch_constraints.call_count == 1
+    assert mock_api_client.fetch_codelist.call_count == 1
