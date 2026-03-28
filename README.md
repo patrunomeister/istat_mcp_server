@@ -51,17 +51,18 @@ git clone <repository-url>
 cd istat_mcp_server
 ```
 
-2. Install dependencies and run:
+2. Create a virtual environment and install dependencies (Python >=3.11 required):
 
-**Via uv (recommended)**:
-
+**With uv (recommended):**
 ```bash
 uv sync
-uv run python -m istat_mcp_server
+```
+`uv sync` automatically creates a `.venv` directory and installs all dependencies into it. To run commands manually, activate it first:
+```bash
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
 
-**Via pip**:
-
+**With pip:**
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
@@ -69,7 +70,6 @@ pip install -e .
 ```
 
 3. Create a `.env` file (optional, uses defaults if not present):
-
 ```bash
 cp .env.example .env
 ```
@@ -79,27 +79,21 @@ Optional: for slow `availableconstraint` responses used by `get_constraints`, se
 AVAILABLECONSTRAINT_TIMEOUT_SECONDS=180
 ```
 
-## Configuration for Claude Desktop
+## MCP Client Configuration
 
-### Via uv (recommended)
+This server works with any MCP-compatible client. The sections below cover the most common ones.
 
-```json
-{
-  "mcpServers": {
-    "istat": {
-      "command": "uv",
-      "args": ["run", "--directory", "/path/to/istat_mcp_server", "python", "-m", "istat_mcp_server"]
-    }
-  }
-}
-```
+[Claude Desktop](#claude-desktop) | [Claude Code](#claude-code) | [Gemini CLI](#gemini-cli) | [VS Code](#vs-code) | [Codex CLI](#codex-cli) | [Claude Desktop on Windows with Python on WSL2](#claude-desktop-on-windows-with-python-on-wsl2)
 
-### Via python
+> In all examples, replace `/path/to/istat_mcp_server` with the actual path to this directory, and `python` with `python3` if needed on your system.
+
+### Claude Desktop
 
 Add to your Claude Desktop configuration file:
 
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux**: `~/.config/Claude/claude_desktop_config.json`
 
 ```json
 {
@@ -113,7 +107,107 @@ Add to your Claude Desktop configuration file:
 }
 ```
 
-Replace `/path/to/istat_mcp_server` with the actual path to this directory.
+### Claude Code
+
+**Add globally** (available in all your projects):
+
+```bash
+claude mcp add -s user istat -- python -m istat_mcp_server --cwd /path/to/istat_mcp_server
+```
+
+**Add for the current project only** (creates or updates `.mcp.json` in the project folder):
+
+```bash
+claude mcp add istat -- python -m istat_mcp_server --cwd /path/to/istat_mcp_server
+```
+
+Or add manually to `.mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "istat": {
+      "command": "python",
+      "args": ["-m", "istat_mcp_server"],
+      "cwd": "/path/to/istat_mcp_server"
+    }
+  }
+}
+```
+
+> `-s user` makes the server available globally across all your projects. Without it, the server is scoped to the current project only.
+
+### Gemini CLI
+
+**Add globally:**
+
+```bash
+gemini mcp add -s user istat -- python -m istat_mcp_server --cwd /path/to/istat_mcp_server
+```
+
+Or add manually to `~/.gemini/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "istat": {
+      "command": "python",
+      "args": ["-m", "istat_mcp_server"],
+      "cwd": "/path/to/istat_mcp_server"
+    }
+  }
+}
+```
+
+### VS Code
+
+Add to your User Settings or `.vscode/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "istat": {
+      "command": "python",
+      "args": ["-m", "istat_mcp_server"],
+      "cwd": "/path/to/istat_mcp_server"
+    }
+  }
+}
+```
+
+### Codex CLI
+
+Add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.istat]
+command = "python"
+args = ["-m", "istat_mcp_server"]
+cwd = "/path/to/istat_mcp_server"
+```
+
+### Claude Desktop on Windows with Python on WSL2
+
+If you run Claude Desktop on Windows but have Python and this server installed inside WSL2, use `wsl.exe -e` to bridge the two environments. Point to the Python executable inside your virtual environment:
+
+```json
+{
+  "mcpServers": {
+    "istat": {
+      "command": "wsl.exe",
+      "args": [
+        "-e",
+        "/home/<your-user>/path/to/istat_mcp_server/.venv/bin/python",
+        "-m", "istat_mcp_server"
+      ]
+    }
+  }
+}
+```
+
+Replace `/home/<your-user>/path/to/istat_mcp_server` with the actual WSL path to this directory.
+
+> **Note:** Claude Code runs natively inside WSL2 and uses the standard configuration above. The `wsl.exe` wrapper is only needed for Claude Desktop running on the Windows side.
 
 ## Skill (Recommended)
 
