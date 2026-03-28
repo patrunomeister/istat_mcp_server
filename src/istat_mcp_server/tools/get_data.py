@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from datetime import datetime
 from typing import Any
 
@@ -114,6 +115,117 @@ def parse_sdmx_to_table(xml_content: str, dataflow_full_id: str) -> str:
         output_lines.append('\t'.join(row))
     
     return '\n'.join(output_lines)
+
+
+def _parse_period(period_str: str) -> tuple[int, int, int] | None:
+    """Parse a period string into a (year, start_month, end_month) tuple.
+
+    Supported formats:
+    - ``YYYY``          → full year  (year, 1, 12)
+    - ``YYYY-MM``       → month      (year, month, month)
+    - ``YYYY-MM-DD``    → day        (year, month, month)
+    - ``YYYY-Qn``       → quarter    (year, first_month, last_month)
+    - ``YYYY-Sn``/``YYYY-Hn`` → semester (year, first_month, last_month)
+
+    Returns:
+        Tuple (year, start_month, end_month) or None if the string cannot be parsed.
+    """
+    if not period_str:
+        return None
+    s = period_str.strip()
+    try:
+        if re.match(r'^\d{4}$', s):
+            return (int(s), 1, 12)
+
+        m = re.match(r'^(\d{4})-[Qq]([1-4])$', s)
+        if m:
+            year, q = int(m.group(1)), int(m.group(2))
+            return (year, (q - 1) * 3 + 1, q * 3)
+
+        m = re.match(r'^(\d{4})-[SsHh]([12])$', s)
+        if m:
+            year, h = int(m.group(1)), int(m.group(2))
+            return (year, (h - 1) * 6 + 1, h * 6)
+
+        m = re.match(r'^(\d{4})-(\d{2})(?:-\d{2})?$', s)
+        if m:
+            year, month = int(m.group(1)), int(m.group(2))
+            return (year, month, month)
+
+    except (ValueError, AttributeError):
+        pass
+
+    return None
+
+
+def filter_tsv_by_time_period(tsv_data: str, start_period: str | None, end_period: str | None) -> str:
+    """Filter TSV rows by TIME_PERIOD range (workaround for ISTAT endPeriod+1 bug).
+
+    The ISTAT SDMX API returns one extra year beyond the requested endPeriod.
+    This function filters out rows whose TIME_PERIOD falls outside the requested range.
+
+    Args:
+        tsv_data: TSV string with header row
+        start_period: Requested start period
+        end_period: Requested end period
+
+    Returns:
+        Filtered TSV string
+    """
+    if not start_period and not end_period:
+        return tsv_data
+
+    lines = tsv_data.split('\n')
+    if not lines:
+        return tsv_data
+
+    header = lines[0].split('\t')
+    if 'TIME_PERIOD' not in header:
+        return tsv_data
+
+    tp_idx = header.index('TIME_PERIOD')
+
+    start_parsed = _parse_period(start_period) if start_period else None
+    end_parsed = _parse_period(end_period) if end_period else None
+
+    if start_parsed is None and start_period:
+        logger.warning(f'filter_tsv_by_time_period: cannot parse start_period "{start_period}", skipping start filter')
+    if end_parsed is None and end_period:
+        logger.warning(f'filter_tsv_by_time_period: cannot parse end_period "{end_period}", skipping end filter')
+
+    filtered = [lines[0]]
+    removed = 0
+    for line in lines[1:]:
+        if not line:
+            continue
+        parts = line.split('\t')
+        if len(parts) <= tp_idx:
+            filtered.append(line)
+            continue
+        row_parsed = _parse_period(parts[tp_idx])
+        if row_parsed is None:
+            filtered.append(line)
+            continue
+        row_year, row_start_month, row_end_month = row_parsed
+
+        if start_parsed:
+            start_year, start_start_month, _ = start_parsed
+            if (row_year, row_end_month) < (start_year, start_start_month):
+                removed += 1
+                continue
+
+        if end_parsed:
+            end_year, _, end_end_month = end_parsed
+            if (row_year, row_start_month) > (end_year, end_end_month):
+                removed += 1
+                continue
+
+        filtered.append(line)
+
+    if removed:
+        logger.info(f'filter_tsv_by_time_period: removed {removed} rows outside [{start_period}, {end_period}]')
+
+    return '\n'.join(filtered)
 
 
 def _extract_constraints_info(constraints_data: dict[str, Any]) -> tuple[list[str], str | None, str | None]:
@@ -276,5 +388,8 @@ async def handle_get_data(
 
     # Step 7: Parse XML to table format
     table_data = parse_sdmx_to_table(data_xml, dataflow_full_id)
-    
+
+    # Step 8: Filter by TIME_PERIOD (workaround for ISTAT endPeriod+1 bug)
+    table_data = filter_tsv_by_time_period(table_data, start_period, end_period)
+
     return [TextContent(type='text', text=table_data)]
