@@ -68,12 +68,37 @@ Optional: for slow `availableconstraint` responses used by `get_constraints`, se
 AVAILABLECONSTRAINT_TIMEOUT_SECONDS=180
 ```
 
-## Configuration for Claude Desktop
+## Quick Setup (npx)
+
+The fastest way to use this server is via `npx`, with no cloning or virtual environment required.
+
+### Claude Code CLI
+
+```bash
+claude mcp add istat -- npx -y istat-mcp-server
+```
+
+### Claude Desktop
 
 Add to your Claude Desktop configuration file:
 
 **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "istat": {
+      "command": "npx",
+      "args": ["-y", "istat-mcp-server"]
+    }
+  }
+}
+```
+
+### Alternative: from source
+
+If you prefer to run from a local clone:
 
 ```json
 {
@@ -88,6 +113,25 @@ Add to your Claude Desktop configuration file:
 ```
 
 Replace `/path/to/istat_mcp_server` with the actual path to this directory.
+
+## Skill (Recommended)
+
+This project includes an [Agent Skill](https://agentskills.io/) in `skills/istat-mcp/` that guides the model through the correct workflow step by step. **It is strongly recommended to install the skill** for a better experience: it reduces errors, avoids unnecessary API calls, and produces more accurate results.
+
+### Claude Code CLI
+
+```bash
+claude skills add ./skills/istat-mcp
+```
+
+### Claude Desktop
+
+1. Open **Claude Desktop**
+2. Click the **Settings** icon (gear icon, bottom-left)
+3. Select **Skills** in the left sidebar
+4. Click **"Add Skill"**
+5. Browse to the `skills/istat-mcp` folder inside this repository and select it
+6. The skill will appear in the list as **istat-mcp** — make sure it is enabled
 
 ## Dataflow Blacklist Configuration
 
