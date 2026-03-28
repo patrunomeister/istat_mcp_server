@@ -253,8 +253,7 @@ def create_server() -> Server:
             elif name == 'get_data':
                 result = await handle_get_data(arguments, cache_manager, api_client, blacklist)
             elif name == 'get_cache_diagnostics':
-                result_dict = await get_cache_diagnostics_handler()
-                result = [result_dict]
+                result = await get_cache_diagnostics_handler()
             else:
                 raise ValueError(f'Unknown tool: {name}')
             
