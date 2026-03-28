@@ -8,7 +8,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 from mcp.server import Server
-from mcp.types import TextContent, Tool
+from mcp.types import Tool
 
 from .api.client import ApiClient
 from .cache.manager import CacheManager
@@ -253,8 +253,7 @@ def create_server() -> Server:
             elif name == 'get_data':
                 result = await handle_get_data(arguments, cache_manager, api_client, blacklist)
             elif name == 'get_cache_diagnostics':
-                result_dict = await get_cache_diagnostics_handler()
-                result = [TextContent(type='text', text=json.dumps(result_dict, ensure_ascii=False, indent=2))]
+                result = await get_cache_diagnostics_handler()
             else:
                 raise ValueError(f'Unknown tool: {name}')
             
