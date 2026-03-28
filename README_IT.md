@@ -49,7 +49,17 @@ git clone <repository-url>
 cd istat_mcp_server
 ```
 
-2. Crea un virtual environment e installa le dipendenze:
+2. Installa le dipendenze ed esegui:
+
+**Via uv (consigliato)**:
+
+```bash
+uv sync
+uv run python -m istat_mcp_server
+```
+
+**Via pip**:
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # Su Windows: .venv\Scripts\activate
@@ -57,6 +67,7 @@ pip install -e .
 ```
 
 3. Crea un file `.env` (opzionale, usa i default se assente):
+
 ```bash
 cp .env.example .env
 ```

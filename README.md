@@ -51,7 +51,17 @@ git clone <repository-url>
 cd istat_mcp_server
 ```
 
-2. Create a virtual environment and install dependencies:
+2. Install dependencies and run:
+
+**Via uv (recommended)**:
+
+```bash
+uv sync
+uv run python -m istat_mcp_server
+```
+
+**Via pip**:
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
@@ -59,6 +69,7 @@ pip install -e .
 ```
 
 3. Create a `.env` file (optional, uses defaults if not present):
+
 ```bash
 cp .env.example .env
 ```
@@ -69,6 +80,21 @@ AVAILABLECONSTRAINT_TIMEOUT_SECONDS=180
 ```
 
 ## Configuration for Claude Desktop
+
+### Via uv (recommended)
+
+```json
+{
+  "mcpServers": {
+    "istat": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/istat_mcp_server", "python", "-m", "istat_mcp_server"]
+    }
+  }
+}
+```
+
+### Via python
 
 Add to your Claude Desktop configuration file:
 
