@@ -260,12 +260,12 @@ def create_server() -> Server:
                             'description': "Dimension at observation level (e.g., 'TIME_PERIOD'). Optional.",
                         },
                         'last_n_observations': {
-                            'type': 'integer',
+                            'type': ['integer', 'string'],
                             'description': "Return only the N most recent observations per series (SDMX lastNObservations). Use 1 to preview a dataflow. Minimum 1.",
                             'minimum': 1,
                         },
                         'first_n_observations': {
-                            'type': 'integer',
+                            'type': ['integer', 'string'],
                             'description': "Return only the N oldest observations per series (SDMX firstNObservations). Minimum 1.",
                             'minimum': 1,
                         },

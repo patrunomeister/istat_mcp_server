@@ -6,7 +6,7 @@ import pytest
 from mcp.types import TextContent
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from istat_mcp_server.api.models import DataflowInfo
+from istat_mcp_server.api.models import DataflowInfo, GetDataInput
 from istat_mcp_server.tools.get_data import _determine_default_periods, _parse_period, filter_tsv_by_time_period, handle_get_data
 
 
@@ -78,6 +78,24 @@ def _make_tsv(*rows: tuple) -> str:
 
 
 HEADER = ('DATAFLOW', 'FREQ', 'TIME_PERIOD', 'OBS_VALUE')
+
+
+# ---------------------------------------------------------------------------
+# GetDataInput — string coercion for integer fields
+# ---------------------------------------------------------------------------
+
+class TestGetDataInputCoercion:
+    def test_last_n_observations_string(self):
+        m = GetDataInput(id_dataflow='DF_TEST', last_n_observations='3')
+        assert m.last_n_observations == 3
+
+    def test_first_n_observations_string(self):
+        m = GetDataInput(id_dataflow='DF_TEST', first_n_observations='5')
+        assert m.first_n_observations == 5
+
+    def test_last_n_observations_int(self):
+        m = GetDataInput(id_dataflow='DF_TEST', last_n_observations=1)
+        assert m.last_n_observations == 1
 
 
 # ---------------------------------------------------------------------------

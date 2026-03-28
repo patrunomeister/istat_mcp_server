@@ -98,6 +98,13 @@ class GetDataInput(BaseModel):
         ge=1,
     )
 
+    @field_validator('last_n_observations', 'first_n_observations', mode='before')
+    @classmethod
+    def coerce_to_int(cls, v: object) -> object:
+        if isinstance(v, str) and v.strip():
+            return int(v)
+        return v
+
 
 # ===== Response Models (for API data) =====
 
