@@ -7,12 +7,11 @@ from typing import Any
 from mcp.types import TextContent
 
 from ..api.client import ApiClient
-from ..api.models import ConstraintValue, TimeConstraintValue
 from ..cache.manager import CacheManager
 from ..utils.tool_helpers import (
     format_json_response,
-    get_cached_constraints,
     get_cached_dataflows,
+    get_cached_datastructure,
     find_dataflow_info,
     handle_tool_errors,
 )
@@ -28,8 +27,13 @@ async def handle_check_code_exists(
 ) -> list[TextContent]:
     """Check if codes exist for a given dimension in a dataflow.
 
-    Uses get_constraints (cached) to verify existence without downloading data.
-    First call fetches constraints from API (~10-60s); subsequent calls use cache (instant).
+    Uses codelist item query (~0.6s per code) instead of downloading all
+    constraints (2+ minutes). Checks if the code exists in the dimension's
+    codelist via GET /codelist/{agency}/{id}/{version}/{item_id}.
+
+    Note: this verifies codelist membership, not dataflow constraint membership.
+    A code in the codelist very likely has data, but if get_data returns empty,
+    the user should be informed and exploration via search_constraint_values suggested.
 
     Args:
         arguments:
@@ -71,29 +75,32 @@ async def handle_check_code_exists(
     if not dataflow_info:
         return format_json_response({'error': f'Dataflow not found: {dataflow_id}'})
 
-    # Get constraints (cached after first call)
-    constraints = await get_cached_constraints(cache, api, dataflow_id)
-
-    dim_constraint = next(
-        (d for d in constraints.dimensions if d.dimension == dimension), None
+    # Get datastructure to find the codelist for the requested dimension
+    datastructure = await get_cached_datastructure(cache, api, dataflow_info.id_datastructure)
+    dim_info = next(
+        (d for d in datastructure.dimensions if d.dimension == dimension), None
     )
-    if dim_constraint is None:
-        available = [d.dimension for d in constraints.dimensions]
+    if dim_info is None:
+        available = [d.dimension for d in datastructure.dimensions]
         return format_json_response({
             'error': f"Dimension '{dimension}' not found in this dataflow",
             'available_dimensions': available,
         })
 
-    # Build set of valid codes for this dimension (ConstraintValue only;
-    # TimeConstraintValue entries are range-based and handled above)
-    valid_codes = {
-        v.value for v in dim_constraint.values if isinstance(v, ConstraintValue)
-    }
+    codelist_id = dim_info.codelist
+    if not codelist_id:
+        return format_json_response({
+            'error': f"No codelist found for dimension '{dimension}'",
+        })
 
-    results = [{'code': code, 'exists': code in valid_codes} for code in codes]
+    # Check all codes in a single batch API call (~2s total)
+    found_codes = await api.fetch_codelist_items(codelist_id, codes)
+    results = [{'code': code, 'exists': code in found_codes} for code in codes]
 
     return format_json_response({
         'dataflow_id': dataflow_id,
         'dimension': dimension,
+        'codelist': codelist_id,
+        'note': 'Verified against codelist (not dataflow constraints). If get_data returns empty, try search_constraint_values to explore available codes.',
         'results': results,
     })

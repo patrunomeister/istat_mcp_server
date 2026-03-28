@@ -12,7 +12,7 @@ license: MIT
 compatibility: Requires the ISTAT MCP server (mcp__istat__* tools).
 metadata:
   author: ondata
-  version: "1.2"
+  version: "1.3"
 ---
 
 # ISTAT MCP Server — Query Workflow
@@ -83,167 +83,181 @@ timeout when queried at national level.
 contains "Italia" or has no territorial suffix over one ending in "- comuni" or "- prov.".
 When both options appear in `discover_dataflows` results, pick the less granular one first.
 
-### Step 2 — `get_constraints`
+### Step 2 — Verify codes before fetching data
 
-> **Skip this step when territorial codes are already known.** If you obtained REF_AREA codes via
-> `get_territorial_codes`, go directly to **Step 2b** (`check_code_exists`) — `get_constraints` is
-> only needed when you don't yet know which dimension codes to use (e.g., discovering AGE groups,
-> checking available FREQ values, or finding the time range).
+This step has two paths depending on what you need to verify. **Always take the fastest path first.**
 
-**Verify** the data is available with the desired cut before fetching.
-Returns a **compact summary**: for each dimension, the codelist ID and the number of available values,
-plus the time range. Full values are cached server-side.
+#### Step 2a — Territorial codes: `get_territorial_codes` + `check_code_exists`
 
-**Always pass only the dimensions you actually need** via the `dimensions` parameter — fetching all
-dimensions on complex dataflows often causes timeouts (180s+). In practice you rarely need more than
-2–3 dimensions at this stage.
-
-Only pass dimensions you genuinely need to discover — skip `SEX`, `FREQ`, `TIME_PERIOD` (apply their safe defaults directly in `get_data`, see *Avoiding Timeouts*). Typically only `AGE` and `REF_AREA` need verification here.
+> **Mandatory rule:** whenever the user asks for data at a specific geographic level
+> (city, province, region), **immediately call `get_territorial_codes(level=..., name=...)`**
+> to obtain the correct territorial code. Do this **before** any `search_constraint_values`
+> call on the dataflow.
 
 ```
-# User asks: "quanti maggiorenni in Italia?" → only need AGE codes
+# Get code at the RIGHT level (infer from user context)
+get_territorial_codes(level="provincia", name="Palermo")
+# → {"code": "ITG12", "name_it": "Palermo"}
+
+# Verify code exists in the dataflow's codelist (~2s, batch)
+check_code_exists(dataflow_id="...", dimension="REF_AREA", codes=["ITG12", "ITF52"])
+# → results: [{code: "ITG12", exists: true}, {code: "ITF52", exists: true}]
+```
+
+`check_code_exists` uses a **codelist item query** (~2s for any number of codes in a single batch).
+It verifies that the code exists in the dimension's codelist, not in the dataflow's constraint set.
+This is almost always sufficient: if a territorial code is in the codelist, it very likely has data.
+
+**If `check_code_exists` returns false:** the dataflow may not have data at that geographic level.
+Try a different level:
+
+```
+# Municipality code not found? Try province level
+get_territorial_codes(level="provincia", name="Torino")
+check_code_exists(dataflow_id="...", dimension="REF_AREA", codes=["ITC11"])
+# Inform user: "data available at province level, not municipality"
+```
+
+**If code exists but `get_data` returns empty:** the code is in the codelist but has no data in
+this specific dataflow. Inform the user and suggest `search_constraint_values` to explore what
+territorial levels actually have data.
+
+**Always pass `level=` explicitly** when searching by name. Do not call
+`get_territorial_codes(name="Roma")` without `level=` — the multi-level results
+make it ambiguous which code to pick.
+
+| User says | Intended level | Call |
+|---|---|---|
+| "città", "comune", specific city name | `comune` | `get_territorial_codes(level="comune", name="Roma")` |
+| "provincia", "province of…" | `provincia` | `get_territorial_codes(level="provincia", name="Roma")` |
+| "regione", "region" | `regione` | `get_territorial_codes(level="regione", name="Lazio")` |
+
+> **Anti-pattern — never use `search_constraint_values` to discover territorial codes by name.**
+> It returns whatever codes are *in the dataflow* that match, often at the wrong geographic level.
+
+#### Step 2b — Discovering dimension codes: `get_constraints`
+
+> **Skip this when territorial codes are already known.** Go directly to Step 3.
+
+Use `get_constraints` only when you need to discover unknown dimension codes (AGE groups,
+DATA_TYPE values, etc.). **Always pass only the dimensions you need** — fetching all dimensions
+on complex dataflows causes timeouts (180s+).
+
+```
+# Only need AGE codes
 get_constraints(dataflow_id="29_7_DF_DCIS_POPSTRRES1_1", dimensions=["AGE"])
-
-# User asks: "disoccupazione per regione" → need REF_AREA codes
-get_constraints(dataflow_id="151_914_DF_DCCV_TAXDISOCCU1_7", dimensions=["REF_AREA"])
 ```
 
-What to check:
-- **REF_AREA**: is the value_count > 0? Do you need specific territory codes?
-- **AGE**: what age group codes are available? (needed when filtering by age)
+Skip dimensions with well-known defaults (`SEX`, `FREQ`, `TIME_PERIOD`) — apply their safe
+defaults directly in `get_data`.
 
-If the desired cut is not available, go back to Step 1 and try a different dataflow.
+#### Step 2c — When you don't know dimension codes and `get_constraints` times out
 
-### Step 2b — verifying codes: `check_code_exists` vs `search_constraint_values`
-
-**If you already know the specific code(s)**, use `check_code_exists` — it only checks existence
-without downloading the full codelist. This is critical for dimensions with many values (REF_AREA
-with 8000+ municipality codes): downloading the list to verify one code wastes tokens and time.
-
-```
-# You already have the code → check_code_exists (fast, no list download)
-check_code_exists(dataflow_id="...", dimension="REF_AREA", codes=["ITG1"])
-# → {"code": "ITG1", "exists": true}
-
-# Also works for any other dimension when the code is known
-check_code_exists(dataflow_id="...", dimension="FREQ", codes=["Q"])
-check_code_exists(dataflow_id="...", dimension="AGE", codes=["Y15-74", "Y20-64"])
-```
-
-**If you don't know the code** (need to discover or search by name), use `search_constraint_values`:
-
-```
-# Discover all values for a dimension
-search_constraint_values(dataflow_id="41_983_...", dimension="SEX")
-# → [{"code": "1", ...maschi}, {"code": "2", ...femmine}, {"code": "9", ...totale}]
-
-# Search by name when code is unknown
-search_constraint_values(dataflow_id="41_983_...", dimension="REF_AREA", search="Palermo")
-# → [{"code": "082053", "description_it": "Palermo", ...}]
-```
-
-**Decision rule:**
-
-| Situation | Tool to use |
-|---|---|
-| Code already known (from `get_territorial_codes` or user input) | `check_code_exists` |
-| `check_code_exists` returns false → discover what level is available | `search_constraint_values` |
-| Need to discover what codes exist | `search_constraint_values` |
-| Need to find a code by name | `search_constraint_values(search=...)` |
-
-**Fallback when `check_code_exists` returns false:** the dataflow likely doesn't have data at that
-geographic level. Use `search_constraint_values(dataflow_id="...", dimension="REF_AREA")` to discover
-what territorial level is actually available (e.g., province instead of municipality), then get the
-correct code with `get_territorial_codes(level="provincia", name="...")` and inform the user.
-
-**Important limitation:** `search_constraint_values` returns codes available **across the entire dataflow**,
-not for a specific combination of other dimensions. A code may appear in the list but return no data
-when combined with certain values of other dimensions. If `get_data` returns no records despite a seemingly valid filter, try omitting the uncertain dimension to discover which codes actually have data for your specific combination.
+Use the **safe preview pattern** from Step 3 instead: call `get_data` with maximum filters
+and `last_n_observations=1` to discover dimension codes from actual data. See Step 3 for details.
 
 ### Step 3 — `get_data`
 
-Fetch actual data, applying the filters you identified in Step 2.
+Fetch actual data. **Always use the narrowest-first strategy**: start with maximum filters,
+then expand only if needed.
+
+#### CRITICAL: Understanding `last_n_observations`
+
+`last_n_observations=1` returns the **most recent observation per series**, NOT 1 total row.
+A dataflow with 100 provinces × 14 age groups × 3 sexes × 4 result types = 16,800 series.
+With `last_n_observations=1`, you still get 16,800 rows (one per series).
+
+**The only way to reduce rows is to close dimensions with filters.** `last_n_observations`
+only helps when you've already filtered down to a small number of series.
+
+#### The narrowest-first strategy
+
+**Always filter ALL dimensions you can.** Every open dimension multiplies the number of series.
+
+**Phase 1 — Maximum filters, single territory, `last_n_observations=1`:**
 
 ```
 get_data(
-  id_dataflow="151_914_DF_DCCV_TAXDISOCCU1_7",
+  id_dataflow="41_270_DF_DCIS_MORTIFERITISTR1_1",
   dimension_filters={
-    "REF_AREA": ["ITC1", "ITC4", "ITD3"],   # codes from get_constraints
-    "SEX": ["9"],                             # 9 = totale
-    "FREQ": ["A"],                            # A = annual
-    "DURATION_UNEMPLOYMENT": ["TOTAL"]
+    "REF_AREA": ["IT"],          # national total
+    "FREQ": ["A"],               # annual
+    "SEX": ["9"],                # both sexes
+    "MONTH": ["99"]              # annual total (not monthly)
+  },
+  last_n_observations=1
+)
+```
+
+This first call reveals the **actual dimension codes** in the response (DATA_TYPE values,
+RESULT codes, AGE classes, etc.). Read them from the output before building the real query.
+
+**Phase 2 — Targeted query with all dimensions closed:**
+
+```
+# Now you know from Phase 1: RESULT has M (morti), F (feriti), 9 (totale)
+get_data(
+  id_dataflow="41_270_DF_DCIS_MORTIFERITISTR1_1",
+  dimension_filters={
+    "REF_AREA": ["ITG12", "ITF52"],   # Palermo + Matera provinces
+    "FREQ": ["A"],
+    "SEX": ["9"],
+    "RESULT": ["M"],                   # solo morti — from Phase 1
+    "PERSON_CLASS": ["9"],             # totale
+    "AGE": ["TOTAL"],
+    "MONTH": ["99"],
+    "DATA_TYPE": ["KILLINJ"],          # from Phase 1
+    "ACCIDENT_LOCALIZATON": ["9"],
+    "TY_ROAD_ACCIDENT": ["9"],
+    "INTERSECTION": ["1"]
   },
   start_period="2020-01-01",
   end_period="2024-12-31"
 )
 ```
 
-Notes:
-- `dimension_filters` is a dict mapping dimension IDs → list of code strings
-- Omit a dimension to get all its values — **this can produce enormous responses and cause timeouts**
-- `start_period` / `end_period` filter the time series
-- `last_n_observations=1` returns only the most recent observation per series — use to preview a dataflow's structure and available dimensions before committing to a full query
-- `first_n_observations=N` returns the N oldest observations per series
+**Phase 3 — If Phase 1 times out, close even more dimensions:**
 
-**Preview pattern — use `last_n_observations=1` before a full query:**
-```
-# Unknown dataflow? Preview structure and last values first (fast, minimal payload)
-get_data(
-  id_dataflow="12_60_DF_DCCV_CONSACQUA_1",
-  last_n_observations=1
-)
-# → reveals dimensions, DATA_TYPE codes, latest TIME_PERIOD, OBS_VALUE scale
-# Then refine with filters for the real query
-```
+Some dataflows are inherently slow on ISTAT's server (60–120s even for 1 series). If Phase 1
+times out:
+1. Add more safe defaults: `AGE: ["TOTAL"]`, `PERSON_CLASS: ["9"]`, `RESULT: ["9"]`
+2. Use `start_period` and `end_period` to restrict to a single year
+3. If still timing out, the dataflow may be too heavy — try a different, less granular dataflow
 
-This is especially useful when `get_constraints` shows a large `value_count` for an unfamiliar
-dimension and you want to see real data before constructing filters.
-
----
-
-## Avoiding Timeouts — Always Filter
-
-The ISTAT API times out (180s) on broad, unfiltered requests. The payload grows multiplicatively
-with every dimension you leave open: 20 regions × 3 sexes × 5 age groups × 200 citizenships × 10 years
-= millions of cells. Always apply filters.
-
-**Safe defaults when the user hasn't specified a breakdown:**
+#### Safe defaults when the user hasn't specified a breakdown
 
 | Dimension | Safe default | Meaning |
 |---|---|---|
-| `REF_AREA` | `["IT"]` | Italy total (not regional breakdown) |
+| `REF_AREA` | `["IT"]` | Italy total |
 | `SEX` | `["9"]` | Both sexes combined |
-| `FREQ` | `["A"]` | Annual (not monthly/quarterly) |
+| `FREQ` | `["A"]` | Annual |
+| `MONTH` | `["99"]` | Annual total (not monthly) |
+| `AGE` | `["TOTAL"]` | All ages combined |
 
-**Default territory:** if the user does not specify a territory, always use Italy (`REF_AREA: ["IT"]`).
-Do not ask — apply this silently and mention it in the answer.
+**Default territory:** if the user does not specify a territory, use `REF_AREA: ["IT"]` silently.
 
-> **Warning — `IT` is not universal.** Most dataflows use `IT` for the national total, but
-> some (e.g., PRA vehicle registry, certain agricultural series) use a different code such as
-> `ITTOT`. **Strategy:** always try `REF_AREA: ["IT"]` first. If `get_data` returns a 404 or
-> empty result, immediately run `search_constraint_values(dataflow_id="...", dimension="REF_AREA")`
-> to discover the correct national code, then retry `get_data` with that code.
+> **Warning — `IT` is not universal.** Some dataflows use `ITTOT` or other codes for the
+> national total. If `get_data` returns 404 or empty, run
+> `search_constraint_values(dataflow_id="...", dimension="REF_AREA")` to find the correct code.
 
-**Default period:** if the user does not specify a time range, use the last available year.
-Concretely: set `start_period` and `end_period` both to the previous calendar year
+**Default period:** if the user does not specify a time range, use the previous calendar year
 (e.g., if today is 2026, use `start_period="2025-01-01"`, `end_period="2025-12-31"`).
-Do not ask — apply this silently and mention it in the answer.
 
-Start narrow, then expand if the user asks for more granularity. A fast partial answer
-is always better than a timeout.
+---
 
-**Example — generic question → safe first call:**
-```
-# User asks: "quanti stranieri in Italia per paese di provenienza?"
-# Wrong: get_data(id_dataflow="29_317_...", dimension_filters={})  ← TIMEOUT
-# Right:
-get_data(
-  id_dataflow="29_317_DF_DCIS_POPSTRCIT1_1",
-  dimension_filters={"REF_AREA": ["IT"], "SEX": ["9"], "FREQ": ["A"]},
-  start_period="2022-01-01",
-  end_period="2023-12-31"
-)
-```
+## Rate Limiting
+
+**Never make more than one ISTAT API call every 12 seconds.**
+
+The server has a built-in rate limiter that enforces this pause automatically — if you call
+two tools back-to-back, the second one will block until 12 seconds have elapsed since the first.
+This is expected behavior, not an error.
+
+**Minimize API calls:** `check_code_exists` checks all codes in a single batch call (~2s).
+A typical workflow (discover → territorial_codes → check_code_exists → get_data) uses 4 API
+calls = ~36s of rate limiting wait.
+
+Do not retry a call that appears to be hanging — it is likely queued behind the rate limiter.
 
 ---
 
@@ -257,117 +271,59 @@ and includes a note with the total row count. If truncation occurs:
 
 ---
 
-## Territorial Codes — `get_territorial_codes`
-
-> **Mandatory rule:** whenever the user asks for data at a specific geographic level
-> (city, province, region), **immediately call `get_territorial_codes(level=..., name=...)`**
-> to obtain the correct territorial code. Do this **before** any `search_constraint_values`
-> call on the dataflow. Never try to discover territorial codes by searching names inside
-> `search_constraint_values` — that approach returns whatever happens to be in the dataflow
-> and leads to silently using the wrong geographic level (e.g., province instead of city).
-
-Use this **before Step 3** when the user asks for data by territory and you need REF_AREA codes.
-
-```
-# All codes for a level
-get_territorial_codes(level="regione")       # 21 regions → ITC1, ITC2, ...
-get_territorial_codes(level="provincia")     # all provinces
-get_territorial_codes(level="comune")        # all municipalities
-get_territorial_codes(level="ripartizione")  # Nord-Ovest, Nord-Est, Centro, Sud, Isole
-get_territorial_codes(level="italia")        # national level → IT
-
-# Search by name (substring, case-insensitive)
-get_territorial_codes(name="Lombardia")   # → ITC4
-get_territorial_codes(name="Torino")      # → search across all levels (returns multiple hits)
-```
-
-### Always match the geographic level to user intent
-
-`get_territorial_codes(name="Roma")` returns results across **all levels** (comune, provincia,
-regione). The results include codes like `058091` (comune di Roma) and `ITE43` (provincia di Roma).
-**Picking the wrong level silently produces incorrect data** — province data passed off as city data.
-
-**Rule: infer the intended level from context, then filter explicitly:**
-
-| User says | Intended level | `get_territorial_codes` call |
-|---|---|---|
-| "città", "comune", specific city name | `comune` | `get_territorial_codes(level="comune", name="Roma")` |
-| "provincia", "province of…" | `provincia` | `get_territorial_codes(level="provincia", name="Roma")` |
-| "regione", "region" | `regione` | `get_territorial_codes(level="regione", name="Lazio")` |
-
-**Always pass `level=` explicitly** when searching by name. Do not call
-`get_territorial_codes(name="Roma")` without `level=` — the multi-level results
-make it ambiguous which code to pick.
-
-> **Anti-pattern — never use `search_constraint_values` to discover territorial codes by name.**
-> Calling `search_constraint_values(dataflow_id, dimension="REF_AREA", search="Roma")` returns
-> whatever codes are *in the dataflow* that match the string "Roma" — often a **province code**
-> (e.g., `ITE43 — Roma`) that looks like the city but is actually the province.
-> **Always call `get_territorial_codes(level=..., name=...)` first** to get the correct code,
-> then use `check_code_exists` to verify it exists in the dataflow.
-
-**Then verify the code exists in the dataflow.** After getting the comune code (e.g., `058091`),
-use `check_code_exists` — faster than `search_constraint_values` because it doesn't download the
-full codelist (critical when REF_AREA has thousands of municipality codes).
-
-```
-# Step 1: get the code at the RIGHT level (infer from user context)
-get_territorial_codes(level="comune", name="Torino")
-# → {"code": "001272", "name_it": "Torino", ...}
-
-# Step 2: verify the code exists in the dataflow
-check_code_exists(dataflow_id="...", dimension="REF_AREA", codes=["001272"])
-# → {"code": "001272", "exists": true}  → use in get_data
-# → {"code": "001272", "exists": false} → dataflow has no municipality data; try province level
-
-get_territorial_codes(level="provincia", name="Torino")
-# → {"code": "ITC11", ...}
-check_code_exists(dataflow_id="...", dimension="REF_AREA", codes=["ITC11"])
-# If exists: true → inform user that data is only available at province level, then proceed
-
-get_data(..., dimension_filters={"REF_AREA": ["<verified_code>"]})
-```
-
----
-
 ## Supporting Tools
-
-Use these when you need more detail beyond Step 2.
 
 | Tool | When to use |
 |---|---|
-| `check_code_exists(dataflow_id, dimension, codes)` | Verify specific known codes exist — faster than search, no list download |
+| `check_code_exists(dataflow_id, dimension, codes)` | Verify known codes exist — batch codelist query, ~2s |
 | `search_constraint_values(dataflow_id, dimension, search)` | Discover codes when unknown, or search by name |
-| `get_structure(id_datastructure)` | Get the full list of dimensions for a dataflow's data structure |
-| `get_codelist_description(codelist_id)` | Get human-readable descriptions for all codes in a codelist |
-| `get_concepts` | Explore concept schemes (rare — only needed for deep metadata) |
-| `get_cache_diagnostics` | Debug cache state (not needed for normal queries) |
-
-The `codelist` values come from `get_constraints` output (field `codelist` on each dimension summary).
-
----
-
-## Rate Limiting
-
-**Never make more than one ISTAT API call every 12 seconds.**
-
-The server has a built-in rate limiter that enforces this pause automatically — if you call
-two tools back-to-back, the second one will block until 12 seconds have elapsed since the first.
-This is expected behavior, not an error. A typical 3-step workflow (discover → constraints → data)
-takes at least 24 seconds of enforced wait time.
-
-Do not retry a call that appears to be hanging — it is likely queued behind the rate limiter.
+| `get_structure(id_datastructure)` | Get the full list of dimensions for a dataflow |
+| `get_codelist_description(codelist_id)` | Get human-readable descriptions for codes in a codelist |
+| `get_concepts` | Explore concept schemes (rare) |
+| `get_cache_diagnostics` | Debug cache state (not for normal queries) |
 
 ---
 
 ## Common Patterns
 
+### Provincial data for specific cities
+
+```
+# 1. Find dataflow
+discover_dataflows(keywords="incidenti stradali,morti")
+
+# 2. Get territorial codes + verify
+get_territorial_codes(level="provincia", name="Palermo")   # → ITG12
+get_territorial_codes(level="provincia", name="Matera")     # → ITF52
+check_code_exists(dataflow_id="41_270_DF_...", dimension="REF_AREA", codes=["ITG12", "ITF52"])
+
+# 3. Preview with maximum filters to discover dimension codes
+get_data(
+  id_dataflow="41_270_DF_...",
+  dimension_filters={"REF_AREA": ["ITG12"], "FREQ": ["A"], "SEX": ["9"], "MONTH": ["99"]},
+  last_n_observations=1
+)
+# → Read RESULT, DATA_TYPE, PERSON_CLASS codes from response
+
+# 4. Targeted query with ALL dimensions closed
+get_data(
+  id_dataflow="41_270_DF_...",
+  dimension_filters={
+    "REF_AREA": ["ITG12", "ITF52"], "FREQ": ["A"], "SEX": ["9"],
+    "RESULT": ["M"], "MONTH": ["99"], "AGE": ["TOTAL"],
+    "DATA_TYPE": ["KILLINJ"], "PERSON_CLASS": ["9"],
+    "ACCIDENT_LOCALIZATON": ["9"], "TY_ROAD_ACCIDENT": ["9"], "INTERSECTION": ["1"]
+  },
+  start_period="2020-01-01", end_period="2024-12-31"
+)
+```
+
 ### Regional data for all Italy
+
 ```
 1. discover_dataflows(keywords="tasso disoccupazione,regionale")
-2. get_constraints(dataflow_id="...")      # confirm REF_AREA has ITC1–ITG2
-3. get_territorial_codes(level="regione") # get all 21 region codes
-4. get_data(id_dataflow="...", dimension_filters={
+2. get_territorial_codes(level="regione")  # all 21 region codes
+3. get_data(id_dataflow="...", dimension_filters={
      "REF_AREA": ["ITC1","ITC2","ITC3","ITC4","ITD1","ITD2","ITD3","ITD4","ITD5",
                   "ITE1","ITE2","ITE3","ITE4","ITF1","ITF2","ITF3","ITF4","ITF5","ITF6",
                   "ITG1","ITG2"],
@@ -376,23 +332,16 @@ Do not retry a call that appears to be hanging — it is likely queued behind th
 ```
 
 ### Filter by sex and age
+
 ```
-# From get_constraints you know: SEX: 1=maschi, 2=femmine, 9=totale
-#                                 AGE: Y15-74, Y15-64, Y20-64
+# From get_constraints or preview: SEX: 1=maschi, 2=femmine, 9=totale
+#                                   AGE: Y15-74, Y15-64, Y20-64
 get_data(..., dimension_filters={"SEX": ["2"], "AGE": ["Y15-74"]})
 ```
 
 ### Annual vs quarterly data
+
 ```
 # FREQ: A=annuale, Q=trimestrale, M=mensile
 get_data(..., dimension_filters={"FREQ": ["A"]}, start_period="2015-01-01")
 ```
-
-### Preview an unfamiliar dataflow
-```
-# See structure + latest values without downloading everything
-get_data(id_dataflow="...", last_n_observations=1)
-# → one row per series combination, most recent TIME_PERIOD
-# Use the output to identify dimension codes before filtering
-```
-

@@ -353,6 +353,33 @@ class ApiClient:
         logger.info(f'Fetched datastructure {id_datastructure} with {len(dimensions)} dimensions')
         return DatastructureInfo(id_datastructure=id_datastructure, dimensions=dimensions)
 
+    async def fetch_codelist_items(self, codelist_id: str, item_ids: list[str]) -> set[str]:
+        """Check which codes exist in a codelist via batch item query.
+
+        Uses GET /codelist/{agency}/{codelist_id}/{version}/{id1+id2+...} with the
+        SDMX OR operator (+) to check multiple codes in a single API call (~2s).
+
+        Args:
+            codelist_id: Codelist ID (e.g., 'CL_ITTER107')
+            item_ids: Codes to check (e.g., ['ITG12', 'ITF52'])
+
+        Returns:
+            Set of codes that exist in the codelist
+        """
+        if not item_ids:
+            return set()
+
+        item_path = '+'.join(item_ids)
+        try:
+            data = await self._get_json(f'/codelist/IT1/{codelist_id}/1.0/{item_path}')
+        except ApiError:
+            return set()
+
+        codelists = data.get('data', {}).get('codelists', [])
+        if codelists and 'codes' in codelists[0]:
+            return {c['id'] for c in codelists[0]['codes']}
+        return set()
+
     async def fetch_constraints(self, dataflow_id: str, key: str = 'all') -> ConstraintInfo:
         """Fetch available constraints for a dataflow using JSON format.
 

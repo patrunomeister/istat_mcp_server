@@ -2,6 +2,8 @@
 
 ## 2026-03-28
 
+- perf: `check_code_exists` — ora usa codelist item query batch (`GET /codelist/{agency}/{id}/{version}/{id1+id2+...}`) invece di `availableconstraint`; ~2s per N codici in una sola chiamata vs 2+ minuti; nuovo metodo `fetch_codelist_items` in `api/client.py`
+- docs(skill): SKILL.md v1.3 — riscritta strategia "narrowest-first" per `get_data`; chiarito che `last_n_observations=1` = 1 per serie (non 1 riga totale); aggiunto Phase 1/2/3 con filtri progressivi; documentato `check_code_exists` batch via codelist; rimossa sezione preview fuorviante
 - fix: `_determine_default_periods` ora rileva TIME_PERIOD anomali (anno < 1900 o > 2100) restituiti dall'API ISTAT per alcuni dataflow (es. `DF_BES_TERRIT_2`, EndPeriod="0001-12-31") e usa il fallback all'anno precedente invece di causare un 404; aggiunti 5 test; documentato in SKILL.md
 - feat: `get_data` supporta ora `last_n_observations` e `first_n_observations` — mappati a `lastNObservations`/`firstNObservations` nell'API SDMX; inclusi nella cache key e nel curl output; documentati in SKILL.md
 

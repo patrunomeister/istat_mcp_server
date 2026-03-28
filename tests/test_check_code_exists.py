@@ -1,15 +1,14 @@
 """Tests for check_code_exists tool."""
 
 import json
+from unittest.mock import AsyncMock
 
 import pytest
 
 from istat_mcp_server.api.models import (
-    ConstraintInfo,
-    ConstraintValue,
     DataflowInfo,
-    DimensionConstraint,
-    TimeConstraintValue,
+    DatastructureInfo,
+    DimensionInfo,
 )
 from istat_mcp_server.tools.check_code_exists import handle_check_code_exists
 
@@ -28,35 +27,13 @@ def _make_dataflow(df_id: str = 'TEST_DF') -> DataflowInfo:
     )
 
 
-def _make_constraints(df_id: str = 'TEST_DF') -> ConstraintInfo:
-    return ConstraintInfo(
-        id=df_id,
+def _make_datastructure() -> DatastructureInfo:
+    return DatastructureInfo(
+        id_datastructure='TEST_DS',
         dimensions=[
-            DimensionConstraint(
-                dimension='REF_AREA',
-                values=[
-                    ConstraintValue(value='IT'),
-                    ConstraintValue(value='ITC1'),
-                    ConstraintValue(value='ITC4'),
-                ],
-            ),
-            DimensionConstraint(
-                dimension='SEX',
-                values=[
-                    ConstraintValue(value='1'),
-                    ConstraintValue(value='2'),
-                    ConstraintValue(value='9'),
-                ],
-            ),
-            DimensionConstraint(
-                dimension='TIME_PERIOD',
-                values=[
-                    TimeConstraintValue(
-                        StartPeriod='2010-01-01T00:00:00',
-                        EndPeriod='2024-12-31T23:59:59',
-                    )
-                ],
-            ),
+            DimensionInfo(dimension='FREQ', codelist='CL_FREQ'),
+            DimensionInfo(dimension='REF_AREA', codelist='CL_ITTER107'),
+            DimensionInfo(dimension='SEX', codelist='CL_SEX'),
         ],
     )
 
@@ -65,16 +42,22 @@ def _make_constraints(df_id: str = 'TEST_DF') -> ConstraintInfo:
 async def test_check_code_exists_valid_codes(mock_cache_manager, mock_api_client):
     """Known codes return exists=True; unknown codes return exists=False."""
     dataflows = [_make_dataflow()]
-    constraints = _make_constraints()
+    datastructure = _make_datastructure()
 
     async def mock_get_or_fetch(key, fetch_func, persistent_ttl=None):
         if 'dataflows:all' in key:
             return dataflows
-        if 'constraints:TEST_DF' in key:
-            return constraints
+        if 'datastructure:TEST_DS' in key:
+            return datastructure
         return None
 
     mock_cache_manager.get_or_fetch.side_effect = mock_get_or_fetch
+
+    # IT and ITC1 exist, XYZ does not
+    async def mock_fetch_codelist_items(codelist_id, item_ids):
+        return {c for c in item_ids if c in ('IT', 'ITC1')}
+
+    mock_api_client.fetch_codelist_items = AsyncMock(side_effect=mock_fetch_codelist_items)
 
     result = await handle_check_code_exists(
         {'dataflow_id': 'TEST_DF', 'dimension': 'REF_AREA', 'codes': ['IT', 'ITC1', 'XYZ']},
@@ -86,6 +69,7 @@ async def test_check_code_exists_valid_codes(mock_cache_manager, mock_api_client
     response = json.loads(result[0].text)
     assert response['dataflow_id'] == 'TEST_DF'
     assert response['dimension'] == 'REF_AREA'
+    assert response['codelist'] == 'CL_ITTER107'
     results_map = {r['code']: r['exists'] for r in response['results']}
     assert results_map['IT'] is True
     assert results_map['ITC1'] is True
@@ -143,13 +127,13 @@ async def test_check_code_exists_unknown_dataflow(mock_cache_manager, mock_api_c
 async def test_check_code_exists_unknown_dimension(mock_cache_manager, mock_api_client):
     """Returns an error with available_dimensions when dimension is not found."""
     dataflows = [_make_dataflow()]
-    constraints = _make_constraints()
+    datastructure = _make_datastructure()
 
     async def mock_get_or_fetch(key, fetch_func, persistent_ttl=None):
         if 'dataflows:all' in key:
             return dataflows
-        if 'constraints:TEST_DF' in key:
-            return constraints
+        if 'datastructure:TEST_DS' in key:
+            return datastructure
         return None
 
     mock_cache_manager.get_or_fetch.side_effect = mock_get_or_fetch
@@ -171,16 +155,21 @@ async def test_check_code_exists_unknown_dimension(mock_cache_manager, mock_api_
 async def test_check_code_exists_codes_as_string(mock_cache_manager, mock_api_client):
     """Codes passed as a comma-separated string are parsed correctly."""
     dataflows = [_make_dataflow()]
-    constraints = _make_constraints()
+    datastructure = _make_datastructure()
 
     async def mock_get_or_fetch(key, fetch_func, persistent_ttl=None):
         if 'dataflows:all' in key:
             return dataflows
-        if 'constraints:TEST_DF' in key:
-            return constraints
+        if 'datastructure:TEST_DS' in key:
+            return datastructure
         return None
 
     mock_cache_manager.get_or_fetch.side_effect = mock_get_or_fetch
+
+    async def mock_fetch_codelist_items(codelist_id, item_ids):
+        return {c for c in item_ids if c in ('1', '9')}
+
+    mock_api_client.fetch_codelist_items = AsyncMock(side_effect=mock_fetch_codelist_items)
 
     result = await handle_check_code_exists(
         {'dataflow_id': 'TEST_DF', 'dimension': 'SEX', 'codes': '1, 9, 99'},
