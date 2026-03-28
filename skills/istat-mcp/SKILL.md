@@ -171,6 +171,22 @@ Notes:
 - `dimension_filters` is a dict mapping dimension IDs → list of code strings
 - Omit a dimension to get all its values — **this can produce enormous responses and cause timeouts**
 - `start_period` / `end_period` filter the time series
+- `last_n_observations=1` returns only the most recent observation per series — use to preview a dataflow's structure and available dimensions before committing to a full query
+- `first_n_observations=N` returns the N oldest observations per series
+
+**Preview pattern — use `last_n_observations=1` before a full query:**
+```
+# Unknown dataflow? Preview structure and last values first (fast, minimal payload)
+get_data(
+  id_dataflow="12_60_DF_DCCV_CONSACQUA_1",
+  last_n_observations=1
+)
+# → reveals dimensions, DATA_TYPE codes, latest TIME_PERIOD, OBS_VALUE scale
+# Then refine with filters for the real query
+```
+
+This is especially useful when `get_constraints` shows a large `value_count` for an unfamiliar
+dimension and you want to see real data before constructing filters.
 
 ---
 
@@ -359,5 +375,13 @@ get_data(..., dimension_filters={"SEX": ["2"], "AGE": ["Y15-74"]})
 ```
 # FREQ: A=annuale, Q=trimestrale, M=mensile
 get_data(..., dimension_filters={"FREQ": ["A"]}, start_period="2015-01-01")
+```
+
+### Preview an unfamiliar dataflow
+```
+# See structure + latest values without downloading everything
+get_data(id_dataflow="...", last_n_observations=1)
+# → one row per series combination, most recent TIME_PERIOD
+# Use the output to identify dimension codes before filtering
 ```
 
