@@ -1,5 +1,6 @@
 """Tool: check_code_exists - Check if dimension codes exist in a dataflow."""
 
+import json
 import logging
 from typing import Any
 
@@ -59,7 +60,10 @@ async def handle_check_code_exists(
         })
 
     if isinstance(codes, str):
-        codes = [c.strip() for c in codes.split(',')]
+        try:
+            codes = json.loads(codes)
+        except (json.JSONDecodeError, ValueError):
+            codes = [c.strip() for c in codes.split(',')]
 
     # Verify dataflow exists
     dataflows = await get_cached_dataflows(cache, api)

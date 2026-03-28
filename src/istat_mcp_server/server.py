@@ -124,7 +124,7 @@ def create_server() -> Server:
                             'description': "Dimension ID to check (e.g., 'REF_AREA', 'AGE', 'SEX')",
                         },
                         'codes': {
-                            'type': 'array',
+                            'type': ['array', 'string'],
                             'items': {'type': 'string'},
                             'description': "Codes to check (e.g., ['082053', 'ITG12', 'IT'])",
                         },
