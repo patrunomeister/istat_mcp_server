@@ -109,26 +109,41 @@ What to check:
 
 If the desired cut is not available, go back to Step 1 and try a different dataflow.
 
-### Step 2b — `search_constraint_values` (when you need actual codes)
+### Step 2b — verifying codes: `check_code_exists` vs `search_constraint_values`
 
-After `get_constraints` populates the cache, use this to look up specific codes.
-Supports optional substring search on code or description.
+**If you already know the specific code(s)**, use `check_code_exists` — it only checks existence
+without downloading the full codelist. This is critical for dimensions with many values (REF_AREA
+with 8000+ municipality codes): downloading the list to verify one code wastes tokens and time.
 
 ```
-# Get all values for a dimension
-search_constraint_values(dataflow_id="41_983_...", dimension="REF_AREA")
+# You already have the code → check_code_exists (fast, no list download)
+check_code_exists(dataflow_id="...", dimension="REF_AREA", codes=["ITG1"])
+# → {"code": "ITG1", "exists": true}
 
-# Search by name (case-insensitive substring)
-search_constraint_values(dataflow_id="41_983_...", dimension="REF_AREA", search="Palermo")
-# → [{"code": "082053", "description_it": "Palermo", "description_en": "Palermo"}]
+# Also works for any other dimension when the code is known
+check_code_exists(dataflow_id="...", dimension="FREQ", codes=["Q"])
+check_code_exists(dataflow_id="...", dimension="AGE", codes=["Y15-74", "Y20-64"])
+```
 
-# Get all SEX codes
-search_constraint_values(dataflow_id="151_914_...", dimension="SEX")
+**If you don't know the code** (need to discover or search by name), use `search_constraint_values`:
+
+```
+# Discover all values for a dimension
+search_constraint_values(dataflow_id="41_983_...", dimension="SEX")
 # → [{"code": "1", ...maschi}, {"code": "2", ...femmine}, {"code": "9", ...totale}]
+
+# Search by name when code is unknown
+search_constraint_values(dataflow_id="41_983_...", dimension="REF_AREA", search="Palermo")
+# → [{"code": "082053", "description_it": "Palermo", ...}]
 ```
 
-Use this instead of reading the full constraints output when a dimension has many values (e.g., REF_AREA
-with all municipalities). For small dimensions (SEX, FREQ, AGE) you can also read them directly.
+**Decision rule:**
+
+| Situation | Tool to use |
+|---|---|
+| Code already known (from `get_territorial_codes` or user input) | `check_code_exists` |
+| Need to discover what codes exist | `search_constraint_values` |
+| Need to find a code by name | `search_constraint_values(search=...)` |
 
 **Important limitation:** `search_constraint_values` returns codes available **across the entire dataflow**,
 not for a specific combination of other dimensions. A code may appear in the list but return no data
@@ -262,12 +277,11 @@ make it ambiguous which code to pick.
 > whatever codes are *in the dataflow* that match the string "Roma" — often a **province code**
 > (e.g., `ITE43 — Roma`) that looks like the city but is actually the province.
 > **Always call `get_territorial_codes(level=..., name=...)` first** to get the correct code,
-> then use `search_constraint_values` only to *verify* that specific code exists in the dataflow.
+> then use `check_code_exists` to verify it exists in the dataflow.
 
 **Then verify the code exists in the dataflow.** After getting the comune code (e.g., `058091`),
-run `search_constraint_values(dataflow_id="...", dimension="REF_AREA", search="058091")` to
-confirm it appears. If the comune code is absent but the provincia code is present, the dataflow
-only has provincial granularity — **tell the user explicitly** before proceeding with province data.
+use `check_code_exists` — faster than `search_constraint_values` because it doesn't download the
+full codelist (critical when REF_AREA has thousands of municipality codes).
 
 ```
 # Step 1: get the code at the RIGHT level (infer from user context)
@@ -275,19 +289,17 @@ get_territorial_codes(level="comune", name="Torino")
 # → {"code": "001272", "name_it": "Torino", ...}
 
 # Step 2: verify the code exists in the dataflow
-search_constraint_values(dataflow_id="...", dimension="REF_AREA", search="001272")
-# If found → use "001272" in get_data (municipality data)
-# If empty → the dataflow has no municipality data; try the province code
+check_code_exists(dataflow_id="...", dimension="REF_AREA", codes=["001272"])
+# → {"code": "001272", "exists": true}  → use in get_data
+# → {"code": "001272", "exists": false} → dataflow has no municipality data; try province level
+
 get_territorial_codes(level="provincia", name="Torino")
 # → {"code": "ITC11", ...}
-search_constraint_values(dataflow_id="...", dimension="REF_AREA", search="ITC11")
-# If found → inform user that data is only available at province level, then proceed
+check_code_exists(dataflow_id="...", dimension="REF_AREA", codes=["ITC11"])
+# If exists: true → inform user that data is only available at province level, then proceed
 
 get_data(..., dimension_filters={"REF_AREA": ["<verified_code>"]})
 ```
-
-Cross-reference the returned codes with what `get_constraints` shows under `REF_AREA`
-to confirm the territory is available in that specific dataflow.
 
 ---
 
@@ -297,7 +309,8 @@ Use these when you need more detail beyond Step 2.
 
 | Tool | When to use |
 |---|---|
-| `search_constraint_values(dataflow_id, dimension, search)` | Look up codes for a specific dimension (with optional name filter) |
+| `check_code_exists(dataflow_id, dimension, codes)` | Verify specific known codes exist — faster than search, no list download |
+| `search_constraint_values(dataflow_id, dimension, search)` | Discover codes when unknown, or search by name |
 | `get_structure(id_datastructure)` | Get the full list of dimensions for a dataflow's data structure |
 | `get_codelist_description(codelist_id)` | Get human-readable descriptions for all codes in a codelist |
 | `get_concepts` | Explore concept schemes (rare — only needed for deep metadata) |
