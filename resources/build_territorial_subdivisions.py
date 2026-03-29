@@ -99,13 +99,23 @@ def load_itter107(path: str) -> dict[str, str]:
     return codes
 
 
+def _normalize_name(name: str) -> str:
+    """Normalize province name for matching (escaped unicode, spaces, 'di ')."""
+    import unicodedata
+    s = re.sub(r'\\u([0-9a-fA-F]{4})', lambda m: chr(int(m.group(1), 16)), name)
+    s = unicodedata.normalize('NFC', s)
+    s = re.sub(r'\s*/\s*', '/', s)       # "Bolzano / Bozen" → "Bolzano/Bozen"
+    s = re.sub(r'\bdi\s+', '', s)         # "Reggio di Calabria" → "Reggio Calabria"
+    return s.lower()
+
+
 def build_mappings() -> tuple[dict, dict, dict, dict]:
     """Build all territorial mappings from unit_territoriali.csv.
 
     Returns:
         - comune_to_nuts3: cod_com (alfanumerico) → ITTER NUTS3
         - storico_to_nuts3: cod_prov_storico → ITTER NUTS3
-        - name_to_cod_prov: province name → cod_prov (int string)
+        - name_to_cod_prov: normalized province name → cod_prov (int string)
         - nuts2_to_cod_reg: ITTER NUTS2 → cod_reg (int string)
     """
     comune_to_nuts3: dict[str, str] = {}
@@ -129,7 +139,7 @@ def build_mappings() -> tuple[dict, dict, dict, dict]:
                 storico_to_nuts3[cod_prov] = itter
                 nuts2_to_cod_reg[itter[:4]] = str(int(cod_reg))
             if den_uts and cod_prov:
-                name_to_cod_prov[den_uts] = str(int(cod_prov))
+                name_to_cod_prov[_normalize_name(den_uts)] = str(int(cod_prov))
 
     print(f'  comuni: {len(comune_to_nuts3)} | storico: {len(storico_to_nuts3)} | prov_names: {len(name_to_cod_prov)} | reg: {len(nuts2_to_cod_reg)}')
     return comune_to_nuts3, storico_to_nuts3, name_to_cod_prov, nuts2_to_cod_reg
@@ -196,7 +206,7 @@ def build_duckdb(codes: dict, comune_to_nuts3: dict, storico_to_nuts3: dict,
     for k, v in all_province_codes.items():
         parent = IT1XX_PARENTS.get(k, k[:4])
         nuts1 = IT1XX_PARENTS.get(k, k)[:3]
-        rows.append((k, v, 'provincia', 3, parent, None, None, name_to_cod_prov.get(v), den_rip(nuts1), cod_rip(nuts1)))
+        rows.append((k, v, 'provincia', 3, parent, None, None, name_to_cod_prov.get(_normalize_name(v)), den_rip(nuts1), cod_rip(nuts1)))
 
     no_parent = 0
     for k, v in codes.items():
