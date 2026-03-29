@@ -1,5 +1,7 @@
 # ISTAT MCP Server
 
+[![SafeSkill 85/100](https://img.shields.io/badge/SafeSkill-85%2F100_Passes%20with%20Notes-yellow)](https://safeskill.dev/scan/ondata-istat-mcp-server)
+
 [English](README.md) | [Italiano](./README_IT.md)
 
 MCP server for accessing Italian statistical data from the ISTAT SDMX API.
