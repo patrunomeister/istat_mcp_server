@@ -50,6 +50,7 @@ async def get_cache_diagnostics_handler() -> list[TextContent]:
     # Ispezione cache persistente con context manager
     try:
         with diskcache.Cache(str(cache_path)) as cache:
+            cache.expire()
             info["persistent_cache_size"] = len(cache)
             info["persistent_cache_keys"] = list(cache.iterkeys())
     except Exception as e:
