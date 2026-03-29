@@ -17,11 +17,14 @@ metadata:
 
 ## Quick Start
 
-Always follow this 3-step workflow:
+If the query targets a specific territory (region, province, municipality), **start by resolving the territory**:
 
+0. **Resolve territory** with `get_territorial_codes` → get REF_AREA codes
 1. **Discover** the dataflow with `discover_dataflows`
 2. **Get metadata** with `get_constraints` (one call returns dimensions + valid codes + descriptions)
-3. **Fetch data** with `get_data` using the codes from step 2
+3. **Fetch data** with `get_data` using the codes from steps 0 and 2
+
+Skip step 0 only when the query is about Italy as a whole (`REF_AREA: IT`).
 
 ## Available Tools
 
@@ -37,6 +40,36 @@ Always follow this 3-step workflow:
 | 8 | `get_territorial_codes` | Lookup REF_AREA codes by level, name, region, province, or capoluogo |
 
 ## Detailed Workflow
+
+### Step 0: Resolve Territory (when needed)
+
+**Tool**: `get_territorial_codes`
+
+Use this tool **before querying data** whenever the user mentions a specific place, area, or territorial grouping. Never guess REF_AREA codes — always resolve them through this tool.
+
+**When to use it:**
+- User mentions a region, province, or municipality by name (e.g. "dati sulla Campania", "province del Veneto")
+- User asks about a group of territories (e.g. "regioni del Sud", "capoluoghi di provincia")
+- User needs to compare territories (e.g. "Nord vs Sud vs Centro")
+- User asks about comuni with specific characteristics (e.g. "capoluoghi della Lombardia")
+- The dataflow has a REF_AREA dimension and the query is not about Italy as a whole
+
+**Examples:**
+
+```json
+[
+  { "level": "regione" },
+  { "name": "Milano" },
+  { "level": "provincia", "region": "Sicilia" },
+  { "level": "comune", "region": "Lombardia", "capoluogo": true }
+]
+```
+
+The tool contains 9,142 entries with the full Italian territorial hierarchy (italia → ripartizione → regione → provincia → comune) and parent-child relationships. It also flags capoluoghi di provincia and di regione.
+
+Use the returned codes directly in the `REF_AREA` dimension filter of `get_data`.
+
+---
 
 ### Step 1: Identify Dataflows
 
@@ -252,6 +285,7 @@ Analyze employment in Italian manufacturing sectors from 2020 to 2023.
 - **Multiple filters**: concatenate with `+` (e.g. `"ECON_ACTIVITY_NACE_2007": ["0011", "0013"]`).
 - **Inspect codelist values** to pick exact, valid codes
 - **Cache is your friend**: metadata cached 1 month, dataflows 7 days, data 1 hour
+- **Never guess REF_AREA codes**: always use `get_territorial_codes` to resolve place names to codes. Territory is often the starting point of any ISTAT query.
 
 ---
 
@@ -263,33 +297,8 @@ Analyze employment in Italian manufacturing sectors from 2020 to 2023.
 | No data returned | Verify that codes exist in the codelist and are compatible with each other |
 | Wrong dimension order | Check `get_constraints` output for the correct order |
 | Malformed query string (404) | Empty dimensions must be `.`; when there is a filter, `.` still follows |
-
----
-
-## Territorial Codes Lookup
-
-The `get_territorial_codes` tool resolves place names and territorial levels to ISTAT REF_AREA codes. Use it when you need to build dimension filters for `REF_AREA`.
-
-**Parameters:**
-- `level`: one of `italia`, `ripartizione`, `regione`, `provincia`, `comune`
-- `name`: substring search (case-insensitive) across all levels
-- `region`: filter comuni by region name or code
-- `province`: filter comuni by province name or code
-- `capoluogo`: if `true`, return only capoluoghi di provincia
-
-**Examples:**
-
-```json
-{"level": "regione"}
-{"name": "Milano"}
-{"level": "comune", "region": "Lombardia", "capoluogo": true}
-```
-
-The data is stored in a local DuckDB database (`resources/istat_lookup.duckdb`). To rebuild it after ISTAT updates, run:
-
-```bash
-python3 resources/build_territorial_subdivisions.py <itter107_json> [comuni_csv]
-```
+| Don't know the REF_AREA code | Use `get_territorial_codes` with name or level to find the right code |
+| Error 500 on a dataflow ID | The ID may be a parent container (e.g. `39_493`). Use `discover_dataflows` to find the sub-dataflows (e.g. `39_493_DF_DCIS_CMORTE1_EV_1`) |
 
 ---
 
