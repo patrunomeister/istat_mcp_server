@@ -201,25 +201,28 @@ def build_duckdb(codes: dict, comune_to_nuts3: dict, storico_to_nuts3: dict, ist
         nuts3_to_cod_prov.setdefault(nuts3, cod_prov)
     nuts2_to_cod_reg.setdefault('ITG2', '20')  # Sardegna = COD_REG 20
 
-    # Helper: NUTS1 code → den_rip
+    # Helpers: NUTS1 code → den_rip / cod_rip
     def den_rip(nuts1: str | None) -> str | None:
         return NUTS1_TO_DEN_RIP.get(nuts1) if nuts1 else None
 
+    def cod_rip(nuts1: str | None) -> str | None:
+        return NUTS1_TO_COD_RIP.get(nuts1) if nuts1 else None
+
     rows = []
 
-    rows.append(('IT', 'Italia', 'italia', 0, None, None, None, None, None))
+    rows.append(('IT', 'Italia', 'italia', 0, None, None, None, None, None, None))
 
     for k, v in {'ITC': 'Nord-ovest', 'ITD': 'Nord-est', 'ITE': 'Centro', 'ITF': 'Sud', 'ITG': 'Isole'}.items():
-        rows.append((k, v, 'ripartizione', 1, 'IT', None, None, NUTS1_TO_COD_RIP.get(k), den_rip(k)))
+        rows.append((k, v, 'ripartizione', 1, 'IT', None, None, NUTS1_TO_COD_RIP.get(k), den_rip(k), cod_rip(k)))
 
     for k, v in codes.items():
         if re.match(r'^IT[A-Z][0-9]$', k):
-            rows.append((k, v, 'regione', 2, k[:3], None, None, nuts2_to_cod_reg.get(k), den_rip(k[:3])))
+            rows.append((k, v, 'regione', 2, k[:3], None, None, nuts2_to_cod_reg.get(k), den_rip(k[:3]), cod_rip(k[:3])))
 
     for k, v in all_province_codes.items():
         parent = IT1XX_PARENTS.get(k, k[:4])
         nuts1 = IT1XX_PARENTS.get(k, k)[:3]
-        rows.append((k, v, 'provincia', 3, parent, None, None, nuts3_to_cod_prov.get(k), den_rip(nuts1)))
+        rows.append((k, v, 'provincia', 3, parent, None, None, nuts3_to_cod_prov.get(k), den_rip(nuts1), cod_rip(nuts1)))
 
     no_parent = 0
     for k, v in codes.items():
@@ -234,7 +237,7 @@ def build_duckdb(codes: dict, comune_to_nuts3: dict, storico_to_nuts3: dict, ist
             # IT1XX province parent: es. IT108 → ITC4 → nuts1=ITC
             if parent and re.match(r'^IT1', parent):
                 nuts1 = IT1XX_PARENTS.get(parent, parent)[:3]
-            rows.append((k, v, 'comune', 4, parent, cap_prov, cap_reg, k, den_rip(nuts1)))
+            rows.append((k, v, 'comune', 4, parent, cap_prov, cap_reg, k, den_rip(nuts1), cod_rip(nuts1)))
 
     # Remove existing db if present
     if OUTPUT_PATH.exists():
@@ -251,11 +254,12 @@ def build_duckdb(codes: dict, comune_to_nuts3: dict, storico_to_nuts3: dict, ist
             capoluogo_provincia BOOLEAN,
             capoluogo_regione BOOLEAN,
             cod_istat VARCHAR,
-            den_rip VARCHAR
+            den_rip VARCHAR,
+            cod_rip VARCHAR
         )
     ''')
     conn.executemany(
-        'INSERT INTO territorial_subdivisions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO territorial_subdivisions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         rows,
     )
     conn.execute('CREATE INDEX idx_level ON territorial_subdivisions(level)')
