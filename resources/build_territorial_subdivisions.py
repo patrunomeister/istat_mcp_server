@@ -15,6 +15,8 @@ Output columns (table: territorial_subdivisions):
 - capoluogo_regione: True if the comune is a regional capital (NULL for non-comuni)
 - cod_istat: numeric ISTAT code as string (COD_RIP for ripartizioni, COD_REG for regioni,
              COD_PROV_STORICO for province, PRO_COM_T for comuni; NULL for italia)
+- den_rip: denominazione ripartizione geografica (Nord-ovest, Nord-est, Centro, Sud, Isole; NULL for italia)
+- cod_rip: codice ripartizione geografica as string (1-5; NULL for italia)
 
 Usage:
     python3 resources/build_territorial_subdivisions.py <itter107_json>
