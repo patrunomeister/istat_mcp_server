@@ -1,8 +1,10 @@
 """Tests for get_data time period filtering (ISTAT endPeriod+1 workaround)."""
 
+from unittest.mock import patch
+
 import pytest
 
-from istat_mcp_server.tools.get_data import _build_curl_info, _parse_period, filter_tsv_by_time_period
+from istat_mcp_server.tools.get_data import _build_curl_info, _determine_default_periods, _parse_period, filter_tsv_by_time_period
 
 
 # --- _parse_period tests ---
@@ -134,3 +136,37 @@ class TestBuildCurlInfo:
         assert 'test_df' in result
         assert 'curl' in result
         assert 'n/a' in result
+
+
+# --- _determine_default_periods tests ---
+
+class TestDetermineDefaultPeriods:
+    @patch('istat_mcp_server.tools.get_data.datetime')
+    def test_future_end_period_falls_back(self, mock_dt):
+        """EndPeriod in the future should fall back to current_year - 1."""
+        mock_dt.now.return_value.year = 2026
+        assert _determine_default_periods('2026-12-31T23:59:59') == ('2025', '2025')
+
+    @patch('istat_mcp_server.tools.get_data.datetime')
+    def test_current_year_end_period_falls_back(self, mock_dt):
+        """EndPeriod in the current year should fall back to current_year - 1."""
+        mock_dt.now.return_value.year = 2026
+        assert _determine_default_periods('2026-06-01') == ('2025', '2025')
+
+    @patch('istat_mcp_server.tools.get_data.datetime')
+    def test_past_end_period_uses_that_year(self, mock_dt):
+        """EndPeriod in the past should use that year directly."""
+        mock_dt.now.return_value.year = 2026
+        assert _determine_default_periods('2023-12-31') == ('2023', '2023')
+
+    @patch('istat_mcp_server.tools.get_data.datetime')
+    def test_none_end_period_uses_fallback(self, mock_dt):
+        """None EndPeriod should fall back to current_year - 1."""
+        mock_dt.now.return_value.year = 2026
+        assert _determine_default_periods(None) == ('2025', '2025')
+
+    @patch('istat_mcp_server.tools.get_data.datetime')
+    def test_year_only_format(self, mock_dt):
+        """EndPeriod as plain year string."""
+        mock_dt.now.return_value.year = 2026
+        assert _determine_default_periods('2024') == ('2024', '2024')

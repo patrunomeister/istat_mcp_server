@@ -267,19 +267,25 @@ def _determine_default_periods(time_period_end: str | None) -> tuple[str, str]:
     Returns:
         Tuple of (start_period, end_period) as strings
     """
+    current_year = datetime.now().year
     if time_period_end:
         # Extract year from end period (format: YYYY-MM-DD or YYYY)
         try:
-            end_year = time_period_end.split('-')[0] if '-' in time_period_end else time_period_end[:4]
-            logger.info(f'get_data: No periods specified, using last available year: {end_year}')
-            return end_year, end_year
+            end_year = int(time_period_end.split('-')[0] if '-' in time_period_end else time_period_end[:4])
+            # If EndPeriod is current year or future, data likely doesn't exist yet
+            if end_year >= current_year:
+                end_year = current_year - 1
+                logger.info(f'get_data: EndPeriod is current/future year, falling back to {end_year}')
+            else:
+                logger.info(f'get_data: No periods specified, using last available year: {end_year}')
+            return str(end_year), str(end_year)
         except (IndexError, ValueError):
             logger.warning(f'get_data: Could not parse TIME_PERIOD: {time_period_end}, using fallback')
-    
+
     # Fallback: use previous year
-    current_year = datetime.now().year - 1
-    logger.info(f'get_data: No TIME_PERIOD info, using fallback year: {current_year}')
-    return str(current_year), str(current_year)
+    fallback_year = current_year - 1
+    logger.info(f'get_data: No TIME_PERIOD info, using fallback year: {fallback_year}')
+    return str(fallback_year), str(fallback_year)
 
 
 API_BASE_URL = os.getenv('API_BASE_URL', 'https://esploradati.istat.it/SDMXWS/rest')

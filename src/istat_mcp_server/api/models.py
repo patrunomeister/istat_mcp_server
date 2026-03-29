@@ -1,6 +1,7 @@
 """Pydantic models for API requests and responses."""
 
 import json
+from typing import Literal
 
 from pydantic import AliasChoices, BaseModel, Field, field_validator
 
@@ -168,6 +169,7 @@ class CodelistInfo(BaseModel):
 class DimensionConstraintWithDescriptions(BaseModel):
     """Dimension constraint with value descriptions from codelist."""
 
+    type: Literal['enumerated'] = 'enumerated'
     dimension: str
     codelist: str
     values: list[CodeValue] = []
@@ -176,6 +178,7 @@ class DimensionConstraintWithDescriptions(BaseModel):
 class TimeConstraintOutput(BaseModel):
     """Time period constraint for output."""
 
+    type: Literal['range'] = 'range'
     dimension: str = 'TIME_PERIOD'
     StartPeriod: str
     EndPeriod: str
