@@ -155,6 +155,7 @@ def download_istat_data() -> dict[str, dict]:
             'cod_reg': str,       # e.g. '19' for Sicilia
             'cod_prov': str,      # e.g. '82' (int of COD_PROV_STORICO)
             'cod_rip': str,       # e.g. '5'
+            'pro_com_t': str,     # 6-digit PRO_COM_T code from JSON
         }
     """
     print(f'Downloading {ISTAT_DATA_URL}...')
@@ -162,15 +163,24 @@ def download_istat_data() -> dict[str, dict]:
         data = json.loads(resp.read().decode('utf-8'))
     result = {}
     for rec in data.get('resultset', []):
-        code = str(rec.get('PRO_COM_T', '')).strip().zfill(6)
-        if code:
-            result[code] = {
-                'cap_prov': bool(rec.get('CC_UTS', 0)),
-                'cap_reg': bool(rec.get('CC_REG', 0)),
-                'cod_reg': str(int(rec['COD_REG'])),
-                'cod_prov': str(int(rec['COD_PROV_STORICO'])),
-                'cod_rip': str(rec['COD_RIP']),
-            }
+        raw_code = str(rec.get('PRO_COM_T', '')).strip()
+        if not raw_code or not raw_code.isdigit():
+            continue
+        code = raw_code.zfill(6)
+        try:
+            cod_reg = str(int(rec['COD_REG']))
+            cod_prov = str(int(rec['COD_PROV_STORICO']))
+            cod_rip = str(rec['COD_RIP'])
+        except (KeyError, ValueError, TypeError):
+            continue
+        result[code] = {
+            'cap_prov': bool(rec.get('CC_UTS', 0)),
+            'cap_reg': bool(rec.get('CC_REG', 0)),
+            'cod_reg': cod_reg,
+            'cod_prov': cod_prov,
+            'cod_rip': cod_rip,
+            'pro_com_t': code,
+        }
     print(f'  Loaded ISTAT data for {len(result)} comuni')
     return result
 
@@ -221,7 +231,8 @@ def build_duckdb(codes: dict, comune_to_nuts3: dict, storico_to_nuts3: dict,
             # IT1XX province parent: es. IT108 → ITC4 → nuts1=ITC
             if parent and re.match(r'^IT1', parent):
                 nuts1 = IT1XX_PARENTS.get(parent, parent)[:3]
-            rows.append((k, v, 'comune', 4, parent, cap_prov, cap_reg, k, den_rip(nuts1), cod_rip(nuts1)))
+            cod_istat = rec.get('pro_com_t')
+            rows.append((k, v, 'comune', 4, parent, cap_prov, cap_reg, cod_istat, den_rip(nuts1), cod_rip(nuts1)))
 
     # Remove existing db if present
     if OUTPUT_PATH.exists():

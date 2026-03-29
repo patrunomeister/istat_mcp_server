@@ -42,7 +42,7 @@ Il mapping viene derivato **a cascata dai comuni**:
 
 ## Problema noto: Sardegna
 
-**Stato**: 11 province e la regione Sardegna hanno `cod_istat = NULL`.
+**Stato attuale**: solo 3 province abolite nel 2016 hanno `cod_istat = NULL` (dopo il fix).
 
 **Causa**: dopo la riforma provinciale sarda del 2016, i codici comuni sono cambiati:
 
@@ -69,4 +69,4 @@ Province sarde senza `cod_istat`:
 | IT113 | Gallura Nord-Est Sardegna | 113 |
 | IT119 | Sulcis Iglesiente | 119 |
 
-**Fix implementato**: aggiunto mapping manuale `SARDINIA_NUTS3_TO_COD_PROV` e fallback `ITG2 → 20` per la regione. Restano `NULL` le 3 province abolite nel 2016 non presenti nel JSON: `ITG29` (Olbia-Tempio), `ITG2C` (Carbonia-Iglesias), `IT111` (Sud Sardegna).
+**Fix implementato**: i codici delle province e della regione Sardegna vengono derivati tramite `unit_territoriali.csv`, che contiene i nomi e i codici correnti post-riforma. Restano `NULL` le 3 province abolite nel 2016 non presenti nel CSV corrente: `ITG29` (Olbia-Tempio), `ITG2C` (Carbonia-Iglesias), `IT111` (Sud Sardegna).
