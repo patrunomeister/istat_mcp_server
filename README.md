@@ -48,7 +48,7 @@ This Model Context Protocol (MCP) server provides Claude Desktop with access to 
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
+git clone https://github.com/ondata/istat_mcp_server.git
 cd istat_mcp_server
 ```
 
@@ -60,13 +60,19 @@ uv sync
 ```
 `uv sync` automatically creates a `.venv` directory and installs all dependencies into it. To run commands manually, activate it first:
 ```bash
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+# Linux/macOS
+source .venv/bin/activate
+# Windows
+.venv\Scripts\activate
 ```
 
 **With pip:**
 ```bash
 python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+# Linux/macOS
+source .venv/bin/activate
+# Windows
+.venv\Scripts\activate
 pip install -e .
 ```
 
@@ -107,6 +113,8 @@ Add to your Claude Desktop configuration file:
   }
 }
 ```
+
+**Note**: if `python` is not found in your system PATH, replace `"python"` in `"command"` with the absolute path to your Python executable (e.g. `/usr/bin/python3` or `C:\Python311\python.exe`).
 
 ### Claude Code
 
