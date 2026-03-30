@@ -124,7 +124,7 @@ class TestBuildCurlInfo:
         assert 'endPeriod=2020' in result
         assert 'csv' in result
         assert 'format=csv' in result
-        assert 'CSV URL (open in browser)' in result
+        assert 'CSV URL (open in browser or with cURL)' in result
         assert 'SDMX URL (XML)' in result
 
     def test_no_filters(self):
@@ -138,6 +138,9 @@ class TestBuildCurlInfo:
         )
         assert 'test_df' in result
         assert 'curl' in result
+        # When no start/end periods are provided, the Period line should show a placeholder.
+        assert 'Period' in result
+        assert 'n/a' in result
 
 
 # --- _determine_default_periods tests ---

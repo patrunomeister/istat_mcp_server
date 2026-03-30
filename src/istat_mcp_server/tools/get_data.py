@@ -323,15 +323,12 @@ def _build_curl_info(
         filter_rows.append(f'  - `{dim}`: `{value_str}`')
     filters_md = '\n'.join(filter_rows) if filter_rows else '  - (no filters)'
 
-    curl_cmd = (
-        f'curl -H "Accept: application/vnd.sdmx.data+csv;version=1.0.0" \\\n'
-        f'  "{url}"'
-    )
+    curl_cmd = f'curl "{csv_url}"'
 
     return (
         '\n\n---\n'
         '## How to reproduce this query\n\n'
-        f'**CSV URL (open in browser):**\n```\n{csv_url}\n```\n\n'
+        f'**CSV URL (open in browser or with cURL):**\n```\n{csv_url}\n```\n\n'
         f'**SDMX URL (XML):**\n```\n{url}\n```\n\n'
         f'**cURL to download CSV:**\n```bash\n{curl_cmd}\n```\n\n'
         '**Query breakdown:**\n'
