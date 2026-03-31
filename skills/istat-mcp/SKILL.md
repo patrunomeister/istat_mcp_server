@@ -420,6 +420,14 @@ Dettagli:
 
 ---
 
+## Output finale
+
+Dopo ogni analisi che usa `get_data`, chiudi SEMPRE con una sezione "Fonti dati" che include:
+- URL CSV di ogni query effettuata (apribili nel browser)
+- Per ogni URL: quali filtri sono stati applicati e quali sono i campi disponibili applicabili alla query
+
+---
+
 ## API Reference
 
 - **Base URL**: `https://esploradati.istat.it/SDMXWS/rest`
