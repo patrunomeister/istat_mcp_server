@@ -1,7 +1,7 @@
 # Copilot Instructions — MCP Server: istat_mcp_server
 
 ## Goal
-This MCP server exposes data from the ISTAT SDMX API (https://esploradati.istat.it/SDMXWS/rest/) to Claude Desktop. It implements a two-layer caching mechanism (in-memory + persistent) to minimize API calls and provides seven tools for discovering, querying, and retrieving Italian statistical data. All tool inputs are validated with Pydantic, errors are handled gracefully, and the caching mechanism is implemented with appropriate TTLs. The server follows best practices for code organization, error handling, and documentation.
+This MCP server exposes data from the ISTAT SDMX API (https://esploradati.istat.it/SDMXWS/rest/) to Claude Desktop. It implements a two-layer caching mechanism (in-memory + persistent) to minimize API calls and provides **eight tools** for discovering, querying, and retrieving Italian statistical data. All tool inputs are validated with Pydantic, errors are handled gracefully, and the caching mechanism is implemented with appropriate TTLs. The server follows best practices for code organization, error handling, and documentation.
 
 ## General Principles
 
@@ -80,10 +80,11 @@ The server acts as a bridge between Claude and the **ISTAT SDMX API** (https://e
 │       │   ├── get_codelist_description.py # Codelist descriptions
 │       │   ├── get_concepts.py            # SDMX concept definitions
 │       │   ├── get_data.py                # Data fetching with blacklist validation
-│       │   └── get_cache_diagnostics.py   # Cache inspection tool
+│       │   ├── get_cache_diagnostics.py   # Cache inspection tool
+│       │   └── get_territorial_codes.py   # REF_AREA lookup via DuckDB
 │       ├── resources/
 │       │   ├── __init__.py
-│       │   └── [resource].py
+│       │   └── istat_lookup.duckdb        # Pre-built territorial hierarchy (read-only)
 │       └── utils/
 │           ├── __init__.py
 │           ├── logging.py     # Structured logging setup
@@ -93,7 +94,12 @@ The server acts as a bridge between Claude and the **ISTAT SDMX API** (https://e
 │   ├── conftest.py
 │   ├── test_blacklist.py                  # Blacklist system tests (12 tests)
 │   ├── test_cache.py                      # Cache layer tests (4 tests)
+│   ├── test_client.py                     # API client tests (2 tests)
+│   ├── test_get_cache_diagnostics.py      # get_cache_diagnostics tests (3 tests)
 │   ├── test_get_constraints.py            # get_constraints tool tests (4 tests)
+│   ├── test_get_data.py                   # get_data tool tests (21 tests)
+│   ├── test_get_territorial_codes.py      # get_territorial_codes tests (13 tests)
+│   ├── test_models.py                     # Pydantic model tests (5 tests)
 │   └── test_validators.py                 # Validator tests (2 tests)
 ├── cache/                                  # Runtime cache directory (git-ignored)
 ├── .env.example
@@ -107,7 +113,7 @@ The server acts as a bridge between Claude and the **ISTAT SDMX API** (https://e
 
 | Capability | Included | Notes |
 |------------|----------|-------|
-| Tools      | ✅       | 7 tools: `discover_dataflows`, `get_structure`, `get_constraints`, `get_codelist_description`, `get_concepts`, `get_data`, `get_cache_diagnostics` |
+| Tools      | ✅       | 8 tools: `discover_dataflows`, `get_structure`, `get_constraints`, `get_codelist_description`, `get_concepts`, `get_data`, `get_cache_diagnostics`, `get_territorial_codes` |
 | Resources  | ❌       | Not implemented yet |
 | Prompts    | ❌       | Not implemented yet |
 | Sampling   | ❌       | Not used |
@@ -115,7 +121,29 @@ The server acts as a bridge between Claude and the **ISTAT SDMX API** (https://e
 
 ---
 
-## Recent Changes (March 2026)
+## Recent Changes (April 2026)
+
+### Token Optimization — `get_data` refactoring (April 3, 2026)
+- **Changed**: `get_data` no longer calls `handle_get_constraints` internally
+  - Previous: invoked the full `handle_get_constraints` tool (loaded all codelist descriptions, serialized to JSON, then re-deserialized)
+  - Now: calls `get_cached_constraints()` directly to read only the raw `ConstraintInfo` model (dimension order + TIME_PERIOD range) — no codelist descriptions loaded
+  - New function `_extract_dimension_order(ConstraintInfo)` reads the Pydantic model directly without JSON roundtrip
+- **Changed**: `get_data` now caches the processed TSV result instead of raw SDMX-XML
+  - `_fetch_parse_filter()` inner function: fetch XML → parse to TSV → filter by time period — cached as a unit
+  - Cache hits return ready-to-use TSV with no re-parsing
+- **Cache TTL for observed data**: updated default from 1 hour → **24 hours** (86400 seconds)
+- **Files changed**: `src/istat_mcp_server/tools/get_data.py`
+
+### Tool 8: `get_territorial_codes` (March 2026)
+- **Added**: New MCP tool for resolving ISTAT REF_AREA codes from territory names
+  - Backed by a pre-built DuckDB file: `src/istat_mcp_server/resources/istat_lookup.duckdb`
+  - Contains full Italian territorial hierarchy: italia → ripartizione → regione → provincia → comune
+  - Supports queries by: level, name (substring), region, province, capoluogo flag
+  - Read-only access; no API calls — pure local lookup
+  - Override DB path via `ISTAT_DB_PATH` environment variable
+- **Files**: `src/istat_mcp_server/tools/get_territorial_codes.py`
+- **Data source**: `resources/build_territorial_subdivisions.py` (offline script)
+- **Tests**: 13 tests in `tests/test_get_territorial_codes.py`
 
 ### Get Constraints Tool (March 14, 2026)
 - **Added**: New MCP tool `get_constraints` that combines three data sources in one call
@@ -129,7 +157,6 @@ The server acts as a bridge between Claude and the **ISTAT SDMX API** (https://e
 - **Files**: `src/istat_mcp_server/tools/get_constraints.py` (handler)
 - **Models**: `DimensionConstraintWithDescriptions`, `TimeConstraintOutput`, `ConstraintsOutput`
 - **Tests**: 4 comprehensive tests added
-- **Documentation**: `GET_CONSTRAINTS_GUIDE.md`, updated README.md and SKILLS.md
 
 ### Dataflow Blacklist System (March 13, 2026)
 - **Added**: Filter out specific dataflows from all queries
@@ -169,14 +196,20 @@ The server acts as a bridge between Claude and the **ISTAT SDMX API** (https://e
   - Context managers for diskcache access
   - Inline cache key construction
 
-### Testing (March 14, 2026)
-- **Status**: All 22 pytest tests passing (0.27s)
-- **Coverage**: API client, cache system, all 7 tools including get_constraints
-- **Test Breakdown**:
-  - 12 tests for blacklist system
-  - 4 tests for cache manager
-  - 4 tests for get_constraints tool
-  - 2 tests for validators
+### Testing
+
+**Total**: 66 pytest tests (0.18s)
+
+**Test Breakdown**:
+- 12 tests for blacklist system (`test_blacklist.py`)
+- 4 tests for cache manager (`test_cache.py`)
+- 2 tests for API client (`test_client.py`)
+- 3 tests for cache diagnostics (`test_get_cache_diagnostics.py`)
+- 4 tests for get_constraints tool (`test_get_constraints.py`)
+- 21 tests for get_data tool (`test_get_data.py`)
+- 13 tests for get_territorial_codes tool (`test_get_territorial_codes.py`)
+- 5 tests for Pydantic models (`test_models.py`)
+- 2 tests for validators (`test_validators.py`)
 
 ---
 
@@ -452,11 +485,11 @@ class GetCodelistDescriptionInput(BaseModel):
 
 ### Tool 5: `get_data`
 
-**Description**: Fetches actual data from a dataflow in SDMX-XML format. Supports filtering by dimensions (respecting the order from datastructure), time periods, and detail level. This is the main tool for retrieving actual statistical data after discovering dataflows and understanding their metadata. Results are cached for 1 hour.
+**Description**: Fetches statistical data from an ISTAT dataflow and returns it as a TSV (tab-separated) table. Supports filtering by dimensions (respecting the order from datastructure), time periods, and detail level. Internally reads only the raw constraints (dimension order + TIME_PERIOD range) from cache — codelist descriptions are NOT loaded, keeping this call lightweight. The processed TSV is cached directly, so cache hits return the ready-to-use table with no re-parsing. Results are cached for 24 hours.
 
 **API Endpoint**: `https://esploradati.istat.it/SDMXWS/rest/data/{agency},{id_dataflow},{version}/{dim1.dim2.dim3...}/ALL/?detail=full&startPeriod=YYYY-MM-DD&endPeriod=YYYY-MM-DD`
 
-**Cache TTL**: 1 hour (3600 seconds)
+**Cache TTL**: 24 hours (86400 seconds) — stores processed TSV, not raw XML
 
 **Input Schema**:
 ```python
@@ -474,16 +507,15 @@ class GetDataInput(BaseModel):
 **Implementation Details**:
 - Validate input with Pydantic model and `utils.validators.validate_dataflow_id()`
 - **Step 1**: Get dataflow info from cache to extract `agency`, `version`, and `id_datastructure`
-- **Step 2**: Fetch datastructure to determine the correct dimension order
-- **Step 3**: Map user-provided dimension filters to the correct order from datastructure
-- **Step 4**: Build the dimension path respecting ISTAT API rules:
-  - **Fixed order**: Always respect dimension order from datastructure
-  - **Exact number**: Include all dimensions (use empty string if not filtered)
-  - **Multiple values**: Use `+` for logical OR within the same dimension (e.g., `IT+FR`)
-  - **No filter**: Use `..` for all dimensions if no filters provided
-- **Step 5**: Construct query parameters for time filtering and detail level
-- Cache key: `api:data:{id_dataflow}:{filter_str}:{time_str}:{detail}`
-- Return raw SDMX-XML response
+- **Step 2**: Read raw constraints via `get_cached_constraints()` — extracts dimension order and TIME_PERIOD range using `_extract_dimension_order(ConstraintInfo)`. Does NOT load codelist descriptions (only needed by `get_constraints`).
+- **Step 3**: Determine start/end periods (from user input or last available year from TIME_PERIOD)
+- **Step 4**: Map user-provided dimension filters to the correct order from constraints
+- **Step 5**: Build cache key and call `_fetch_parse_filter()` inner function:
+  - Fetch SDMX-XML from API
+  - Parse with `parse_sdmx_to_table()` → TSV string
+  - Apply `filter_tsv_by_time_period()` (workaround for ISTAT endPeriod+1 bug)
+  - Cache the final TSV (cache hits skip all XML processing)
+- **Step 6**: Append curl command and CSV URL via `_build_curl_info()`
 
 **Example Query Construction**:
 
@@ -494,11 +526,7 @@ For dataflow `22_315_DF_DCIS_POPORESBIL1_2` with dimensions `[FREQ, REF_AREA, IN
 - **Monthly, Italy or France, all indicators**: `data/IT1,22_315_DF_DCIS_POPORESBIL1_2,1.0/M.IT+FR./ALL/?detail=full`
 - **With time filter**: `data/IT1,22_315_DF_DCIS_POPORESBIL1_2,1.0/M.IT./ALL/?detail=full&startPeriod=2024-11-01&endPeriod=2025-11-30`
 
-**Response Format**: Raw SDMX 2.1 XML containing:
-- Dataset metadata (dataflow, dimensions, attributes)
-- Series keys (dimension combinations)
-- Observations (time period + value pairs)
-- Annotations and metadata
+**Response Format**: TSV table with columns: `DATAFLOW`, dimension columns (in datastructure order), `TIME_PERIOD`, `OBS_VALUE`, and any observation attributes. Followed by a markdown section with the CSV URL and curl command to reproduce the query.
 
 **Handler**: `src/istat_mcp_server/tools/get_data.py::handle_get_data()`
 
@@ -510,9 +538,56 @@ For dataflow `22_315_DF_DCIS_POPORESBIL1_2` with dimensions `[FREQ, REF_AREA, IN
 - Before fetching data, validates that `id_dataflow` is NOT in the blacklist
 - If blacklisted, returns error message: "Dataflow {id} is blacklisted and cannot be accessed"
 - Blacklist is loaded from `DATAFLOW_BLACKLIST` environment variable
-- Use case: Prevent access to problematic or deprecated dataflows
 
-**Note**: This tool returns raw SDMX-XML. Claude can parse and analyze this XML to extract specific data points, create summaries, or convert to other formats.
+**ISTAT API workaround**: The ISTAT `endPeriod` parameter returns one extra period beyond the requested end. `filter_tsv_by_time_period()` removes these extra rows from the cached TSV.
+
+---
+
+### Tool 8: `get_territorial_codes`
+
+**Description**: Resolves ISTAT REF_AREA codes for Italian territorial units. Queries a pre-built local DuckDB database — no API calls at all. Supports lookup by level (italia, ripartizione, regione, provincia, comune), name (substring, case-insensitive), region, province, and capoluogo flag.
+
+**No API endpoint** — reads from `src/istat_mcp_server/resources/istat_lookup.duckdb` (read-only).
+
+**Cache TTL**: N/A (no external calls; DuckDB query is fast)
+
+**Input Schema**:
+```python
+# All parameters are optional; at least one must be provided
+{
+    'level': 'regione',       # one of: italia, ripartizione, regione, provincia, comune
+    'name': 'Milano',         # substring match on name_it (case-insensitive)
+    'region': 'Lombardia',    # filter by parent region name or REF_AREA code
+    'province': 'MI',         # filter comuni by parent province name or code
+    'capoluogo': True,        # if True, return only comuni that are capoluogo di provincia
+}
+```
+
+**Implementation Details**:
+- Opens a read-only DuckDB connection to `istat_lookup.duckdb`
+- DB path overridable via `ISTAT_DB_PATH` environment variable
+- Table: `territorial_subdivisions` — full hierarchy: italia → ripartizione → regione → provincia → comune
+- Each row has: `code` (REF_AREA), `name_it`, `level`, `cod_rip`, `den_rip`, `cod_reg`, `den_reg`, `capoluogo_provincia`, `capoluogo_regione`
+- Returns only comuni that match all specified filters
+- Extra fields `capoluogo_provincia` / `capoluogo_regione` included only for comuni
+
+**Example Output**:
+```json
+{
+  "codes": [
+    {"code": "ITC41", "name_it": "Milano", "level": "provincia"},
+    {"code": "ITC4C", "name_it": "Monza e della Brianza", "level": "provincia"}
+  ]
+}
+```
+
+**Handler**: `src/istat_mcp_server/tools/get_territorial_codes.py::handle_get_territorial_codes()`
+
+**Data Source**: Built offline by `resources/build_territorial_subdivisions.py` from CL_ITTER107 and ISTAT geo data.
+
+**Tests**: 13 tests in `tests/test_get_territorial_codes.py`
+
+**Use Case**: Always call this tool before `get_data` whenever the user mentions a specific place. Never guess REF_AREA codes.
 
 ---
 
@@ -722,7 +797,7 @@ Examples:
 | Constraints | `api:constraints:*` | 1 month | Available values stable |
 | Codelist | `api:codelist:*` | 1 month | Descriptions rarely change |
 | Complete metadata | `api:metadata:*` | 1 month | Composite, very stable |
-| Data | `api:data:*` | 1 hour | Actual data may be updated frequently |
+| Data (TSV) | `api:data:*` | 24 hours | Processed TSV; refreshed daily |
 
 ## API Client
 
@@ -786,9 +861,8 @@ class ApiClient:
         end_period: str | None = None,
         detail: str = 'full',
     ) -> str:
-        # Fetch actual data in SDMX-XML format
-        # Constructs dimension path respecting order
-        # Returns raw XML string
+        # Fetch SDMX-XML from API, parse to TSV, filter by time period
+        # Returns processed TSV string (cached directly)
     
     async def close(self) -> None:
         await self._client.aclose()
@@ -842,7 +916,7 @@ Configuration is managed through environment variables (loaded via `python-doten
 | `MEMORY_CACHE_TTL_SECONDS` | ❌ | `300` | TTL for the in-memory cache layer (5 minutes) |
 | `DATAFLOWS_CACHE_TTL_SECONDS` | ❌ | `604800` | TTL for cached dataflow lists (7 days) |
 | `METADATA_CACHE_TTL_SECONDS` | ❌ | `2592000` | TTL for cached metadata such as constraints, structures, codelists, and concepts (1 month) |
-| `OBSERVED_DATA_CACHE_TTL_SECONDS` | ❌ | `3600` | TTL for cached observed data responses (1 hour) |
+| `OBSERVED_DATA_CACHE_TTL_SECONDS` | ❌ | `86400` | TTL for cached observed data responses (24 hours) |
 | `MAX_MEMORY_CACHE_ITEMS` | ❌ | `512` | Maximum items in the in-memory TTL cache |
 | `DATAFLOW_BLACKLIST` | ❌ | `''` | Comma-separated list of dataflow IDs to exclude from discovery and data access (e.g., `DF_OLD_1,DF_TEST_2`) |
 | `LOG_LEVEL` | ❌ | `INFO` | Logging verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR` |
@@ -863,7 +937,7 @@ PERSISTENT_CACHE_DIR=./cache
 MEMORY_CACHE_TTL_SECONDS=300
 DATAFLOWS_CACHE_TTL_SECONDS=604800
 METADATA_CACHE_TTL_SECONDS=2592000
-OBSERVED_DATA_CACHE_TTL_SECONDS=3600
+OBSERVED_DATA_CACHE_TTL_SECONDS=86400
 MAX_MEMORY_CACHE_ITEMS=512
 
 # Dataflow Blacklist (comma-separated IDs to exclude)
@@ -995,7 +1069,8 @@ tools/
 ├── get_codelist_description.py # handle_get_codelist_description()
 ├── get_concepts.py             # handle_get_concepts()
 ├── get_data.py                 # handle_get_data()
-└── get_cache_diagnostics.py    # get_cache_diagnostics_handler()
+├── get_cache_diagnostics.py    # get_cache_diagnostics_handler()
+└── get_territorial_codes.py    # handle_get_territorial_codes()
 ```
 
 Each tool handler follows this signature:
@@ -1219,7 +1294,12 @@ tests/
 ├── conftest.py                      # Shared fixtures
 ├── test_blacklist.py                # Blacklist system tests (12 tests)
 ├── test_cache.py                    # Cache layer tests (4 tests)
+├── test_client.py                   # API client tests (2 tests)
+├── test_get_cache_diagnostics.py    # get_cache_diagnostics tests (3 tests)
 ├── test_get_constraints.py          # get_constraints tool tests (4 tests)
+├── test_get_data.py                 # get_data tool tests (21 tests)
+├── test_get_territorial_codes.py    # get_territorial_codes tests (13 tests)
+├── test_models.py                   # Pydantic model tests (5 tests)
 └── test_validators.py               # Validator tests (2 tests)
 ```
 

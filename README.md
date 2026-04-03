@@ -16,7 +16,7 @@ This Model Context Protocol (MCP) server provides Claude Desktop with access to 
   - `get_constraints` - Get available constraint values for each dimension with descriptions (combines structure + constraints + codelist descriptions)
   - `get_codelist_description` - Get descriptions in Italian/English for codelist values
   - `get_concepts` - Get semantic definitions of SDMX concepts
-  - `get_data` - Fetch actual statistical data in SDMXXML format (with blacklist validation)
+  - `get_data` - Fetch actual statistical data in TSV table format (with blacklist validation)
   - `get_cache_diagnostics` - Debug tool to inspect cache status
   - `get_territorial_codes` - Resolve ISTAT REF_AREA codes for Italia, ripartizioni, regioni, province, and comuni
 
@@ -324,7 +324,8 @@ ruff check .
 │       │   ├── get_codelist_description.py
 │       │   ├── get_concepts.py
 │       │   ├── get_data.py
-│       │   └── get_cache_diagnostics.py
+       │   ├── get_cache_diagnostics.py
+       │   └── get_territorial_codes.py
 │       └── utils/             # Utilities
 │           ├── logging.py
 │           ├── validators.py
@@ -345,13 +346,13 @@ The server uses a sophisticated two-layer caching strategy:
 - **Persistent Cache**: Disk-based cache with configurable TTLs:
   - Dataflows: 7 days
   - Structures/Codelists: 1 month
-  - Data: 1 hour
+  - Data: 1 day (24 hours) — stores the processed TSV result, not raw XML
 
 Relevant `.env` variables:
 - `MEMORY_CACHE_TTL_SECONDS=300`
 - `DATAFLOWS_CACHE_TTL_SECONDS=604800`
 - `METADATA_CACHE_TTL_SECONDS=2592000`
-- `OBSERVED_DATA_CACHE_TTL_SECONDS=3600`
+- `OBSERVED_DATA_CACHE_TTL_SECONDS=86400`
 - `AVAILABLECONSTRAINT_TIMEOUT_SECONDS=180`
 
 Cache is stored in the `./cache` directory by default.

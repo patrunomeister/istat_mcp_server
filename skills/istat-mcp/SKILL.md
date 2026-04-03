@@ -405,7 +405,8 @@ Dettagli:
 - **Dimensions without filter**: always represent with `.`, never omit.
 - **Multiple filters**: concatenate with `+` (e.g. `"ECON_ACTIVITY_NACE_2007": ["0011", "0013"]`).
 - **Inspect codelist values** to pick exact, valid codes
-- **Cache is your friend**: metadata cached 1 month, dataflows 7 days, data 1 hour
+- **Cache is your friend**: metadata cached 1 month · dataflows 7 days · observed data 24h (1 day)
+- **`get_data` is lean by design**: it reads only raw constraints from cache (dimension order + TIME_PERIOD range) without loading codelist descriptions. Codelist descriptions are only fetched when `get_constraints` is called explicitly. The processed TSV is cached directly, so cache hits return the ready-to-use table with no re-parsing.
 - **Never guess REF_AREA codes**: always use `get_territorial_codes` to resolve place names to codes. Territory is often the starting point of any ISTAT query.
 - **Language**: always respond in the same language as the user's request (Italian if asked in Italian, English if asked in English).
 

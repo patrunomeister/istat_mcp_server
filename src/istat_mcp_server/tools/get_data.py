@@ -1,6 +1,5 @@
 """Tool: get_data - Fetch actual data from a dataflow."""
 
-import json
 import logging
 import os
 import re
@@ -12,17 +11,17 @@ from lxml import etree
 from mcp.types import TextContent
 
 from ..api.client import ApiClient
-from ..api.models import GetDataInput
+from ..api.models import ConstraintInfo, GetDataInput, TimeConstraintValue
 from ..cache.manager import CacheManager
 from ..utils.validators import validate_dataflow_id
 from ..utils.blacklist import DataflowBlacklist
 from ..utils.tool_helpers import (
     find_dataflow_info,
+    get_cached_constraints,
     get_cached_dataflows,
     get_observed_data_cache_ttl,
     handle_tool_errors,
 )
-from .get_constraints import handle_get_constraints
 
 logger = logging.getLogger(__name__)
 
@@ -230,12 +229,14 @@ def filter_tsv_by_time_period(tsv_data: str, start_period: str | None, end_perio
     return '\n'.join(filtered)
 
 
-def _extract_constraints_info(constraints_data: dict[str, Any]) -> tuple[list[str], str | None, str | None]:
-    """Extract dimension order and TIME_PERIOD info from constraints JSON.
-    
+def _extract_dimension_order(constraints: ConstraintInfo) -> tuple[list[str], str | None, str | None]:
+    """Extract dimension order and TIME_PERIOD range directly from ConstraintInfo.
+
+    Reads the cached constraint model directly — no codelist descriptions needed.
+
     Args:
-        constraints_data: Parsed JSON from get_constraints output
-        
+        constraints: Raw ConstraintInfo from cache/API
+
     Returns:
         Tuple of (dimension_order, time_period_start, time_period_end)
     """
@@ -243,18 +244,14 @@ def _extract_constraints_info(constraints_data: dict[str, Any]) -> tuple[list[st
     time_period_start = None
     time_period_end = None
 
-    for constraint in constraints_data.get('constraints', []):
-        dimension_id = constraint.get('dimension', '')
-        
-        if dimension_id == 'TIME_PERIOD':
-            # Extract time period range
-            time_period_start = constraint.get('StartPeriod', '')
-            time_period_end = constraint.get('EndPeriod', '')
-            # TIME_PERIOD is not included in dimension_order for filters
+    for dim in constraints.dimensions:
+        if dim.dimension == 'TIME_PERIOD':
+            if dim.values and isinstance(dim.values[0], TimeConstraintValue):
+                time_period_start = dim.values[0].StartPeriod
+                time_period_end = dim.values[0].EndPeriod
         else:
-            # Regular dimension - add to order
-            dimension_order.append(dimension_id)
-    
+            dimension_order.append(dim.dimension)
+
     return dimension_order, time_period_start, time_period_end
 
 
@@ -368,48 +365,32 @@ async def handle_get_data(
         logger.warning(error_msg)
         return [TextContent(type='text', text=error_msg)]
 
-    # Step 1: Get constraints output (uses cache if available, otherwise generates it)
-    # This provides: dimension order, valid values, and TIME_PERIOD range
-    logger.info(f'get_data: Fetching constraints for {params.id_dataflow}')
-    constraints_response = await handle_get_constraints(
-        arguments={'dataflow_id': params.id_dataflow},
-        cache=cache,
-        api=api,
-    )
-
-    # Parse constraints response
-    if not constraints_response or not constraints_response[0].text:
-        return [TextContent(type='text', text=f'Failed to get constraints for dataflow: {params.id_dataflow}')]
-
-    try:
-        constraints_data = json.loads(constraints_response[0].text)
-    except json.JSONDecodeError:
-        # If parsing fails, the response might be an error message
-        return constraints_response
-
-    # Extract dimension order and TIME_PERIOD info from constraints
-    dimension_order, time_period_start, time_period_end = _extract_constraints_info(constraints_data)
-
-    logger.info(f'get_data: Found {len(dimension_order)} dimensions in order: {dimension_order}')
-    if time_period_start and time_period_end:
-        logger.info(f'get_data: TIME_PERIOD range: {time_period_start} to {time_period_end}')
-
-    # Step 2: Determine start/end periods
-    # If user didn't specify periods, use the last year from TIME_PERIOD range
-    start_period = params.start_period
-    end_period = params.end_period
-    
-    if not start_period and not end_period:
-        start_period, end_period = _determine_default_periods(time_period_end)
-    
-    logger.info(f'get_data: Requesting data for period={start_period} to {end_period}')
-
-    # Step 3: Get dataflow info to extract agency and version (needed for API call)
+    # Step 1: Get dataflow info (agency, version) from cache
     dataflows = await get_cached_dataflows(cache, api)
     dataflow_info = find_dataflow_info(dataflows, params.id_dataflow)
 
     if not dataflow_info:
         return [TextContent(type='text', text=f'Dataflow not found: {params.id_dataflow}')]
+
+    # Step 2: Get raw constraints from cache — only dimension order and TIME_PERIOD needed.
+    # Avoids loading codelist descriptions (handled by get_constraints, not needed here).
+    logger.info(f'get_data: Fetching constraints for {params.id_dataflow}')
+    constraints = await get_cached_constraints(cache, api, params.id_dataflow)
+    dimension_order, time_period_start, time_period_end = _extract_dimension_order(constraints)
+
+    logger.info(f'get_data: Found {len(dimension_order)} dimensions in order: {dimension_order}')
+    if time_period_start and time_period_end:
+        logger.info(f'get_data: TIME_PERIOD range: {time_period_start} to {time_period_end}')
+
+    # Step 3: Determine start/end periods
+    # If user didn't specify periods, use the last year from TIME_PERIOD range
+    start_period = params.start_period
+    end_period = params.end_period
+
+    if not start_period and not end_period:
+        start_period, end_period = _determine_default_periods(time_period_end)
+
+    logger.info(f'get_data: Requesting data for period={start_period} to {end_period}')
 
     agency = dataflow_info.agency
     version = dataflow_info.version
@@ -428,10 +409,11 @@ async def handle_get_data(
     filter_str = '.'.join('+'.join(f) if f else '.' for f in ordered_dimension_filters) if ordered_dimension_filters else ''
     cache_key = f'api:data:{params.id_dataflow}:{filter_str}:{start_period or ""}_{end_period or ""}:{params.detail}:{params.dimension_at_observation or "none"}'
 
-    # Step 6: Fetch data (cached)
-    data_xml = await cache.get_or_fetch(
-        key=cache_key,
-        fetch_func=lambda: api.fetch_data(
+    # Step 6: Fetch, parse, and filter — cache the TSV result directly.
+    # Parsing and filtering happen inside the fetch function so cache hits return
+    # the ready-to-use TSV without re-processing the raw XML on every call.
+    async def _fetch_parse_filter() -> str:
+        data_xml = await api.fetch_data(
             agency=agency,
             dataflow_id=params.id_dataflow,
             version=version,
@@ -440,15 +422,15 @@ async def handle_get_data(
             end_period=end_period,
             detail=params.detail,
             dimension_at_observation=params.dimension_at_observation,
-        ),
+        )
+        tsv = parse_sdmx_to_table(data_xml, dataflow_full_id)
+        return filter_tsv_by_time_period(tsv, start_period, end_period)
+
+    table_data = await cache.get_or_fetch(
+        key=cache_key,
+        fetch_func=_fetch_parse_filter,
         persistent_ttl=get_observed_data_cache_ttl(),
     )
-
-    # Step 7: Parse XML to table format
-    table_data = parse_sdmx_to_table(data_xml, dataflow_full_id)
-
-    # Step 8: Filter by TIME_PERIOD (workaround for ISTAT endPeriod+1 bug)
-    table_data = filter_tsv_by_time_period(table_data, start_period, end_period)
 
     # Step 9: Append curl command and query explanation
     curl_info = _build_curl_info(
