@@ -13,7 +13,7 @@ Questo server Model Context Protocol (MCP) fornisce a Claude Desktop accesso ai 
   - `get_structure` - Ottiene definizioni delle dimensioni e codelist per un ID di datastructure
   - `get_constraints` - Ottiene valori di vincolo disponibili per ogni dimensione con descrizioni (combina struttura + vincoli + descrizioni codelist)
   - `get_codelist_description` - Ottiene descrizioni in italiano/inglese per valori delle codelist
-  - `get_concepts` - Ottiene definizioni semantiche dei concetti SDMX
+  - `get_concepts` - Ottiene la descrizione italiana o inglese di un concetto ISTAT tramite il suo ID (esegue internamente il comando `istat-get-concepts-cli`)
   - `get_data` - Recupera dati statistici in formato tabella TSV (con validazione blacklist)
   - `get_cache_diagnostics` - Tool di debug per ispezionare stato cache
   - `get_territorial_codes` - Risolve i codici REF_AREA ISTAT per Italia, ripartizioni, regioni, province e comuni
@@ -30,7 +30,7 @@ Questo server Model Context Protocol (MCP) fornisce a Claude Desktop accesso ai 
   **Workflow alternativo** (manuale):
   - Usa `get_structure` con un ID di datastructure per vedere dimensioni e codelist associate
   - Poi chiama `get_codelist_description` manualmente per ogni codelist necessaria
-  - Usa `get_concepts` se hai bisogno di definizioni semantiche di dimensioni/attributi
+  - Usa `get_concepts` per ottenere la descrizione italiana o inglese di uno specifico concept ID (ad esempio il nome di una dimensione)
 
 - **Cache a due livelli**:
   - Cache in memoria (cachetools) per accesso rapido durante la sessione
@@ -296,15 +296,17 @@ ruff check .
 │       │   ├── manager.py     # Facade cache
 │       │   ├── memory.py      # Cache in memoria
 │       │   └── persistent.py  # Cache su disco
+│       ├── cli/               # Comandi CLI standalone
+│       │   └── get_concepts_cli.py  # istat-get-concepts-cli <concept_id>
 │       ├── tools/             # Handler tool MCP
 │       │   ├── discover_dataflows.py
 │       │   ├── get_structure.py
 │       │   ├── get_constraints.py
 │       │   ├── get_codelist_description.py
-│       │   ├── get_concepts.py
+│       │   ├── get_concepts.py       # wrappa il CLI via subprocess
 │       │   ├── get_data.py
-       │   ├── get_cache_diagnostics.py
-       │   └── get_territorial_codes.py
+│       │   ├── get_cache_diagnostics.py
+│       │   └── get_territorial_codes.py
 │       └── utils/             # Utility
 │           ├── logging.py
 │           ├── validators.py
