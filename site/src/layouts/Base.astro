@@ -5,14 +5,25 @@ interface Props {
   title: string;
   description: string;
   lang: 'en' | 'it';
+  ogImage?: string;
 }
 
-const { title, description, lang } = Astro.props;
+const { title, description, lang, ogImage: ogImageProp } = Astro.props;
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
-const homeHref = lang === 'it' ? `${base}/it` : `${base}/`;
-const otherLangHref = lang === 'it' ? `${base}/` : `${base}/it`;
+const siteUrl = Astro.site?.toString().replace(/\/$/, '') ?? '';
+const homePath = lang === 'it' ? `${base}/it` : `${base}/`;
+const otherLangPath = lang === 'it' ? `${base}/` : `${base}/it`;
 const otherLangLabel = lang === 'it' ? 'EN' : 'IT';
 const currentLangLabel = lang === 'it' ? 'IT' : 'EN';
+
+const canonical = `${siteUrl}${homePath}`;
+const enUrl = `${siteUrl}${base}/`;
+const itUrl = `${siteUrl}${base}/it`;
+const defaultOgImage = lang === 'it' ? `${base}/og-image-it.png` : `${base}/og-image-en.png`;
+const ogImage = `${siteUrl}${ogImageProp ?? defaultOgImage}`;
+const ogLocale = lang === 'it' ? 'it_IT' : 'en_US';
+const ogLocaleAlt = lang === 'it' ? 'en_US' : 'it_IT';
+const siteName = 'ISTAT MCP Server';
 ---
 
 <!doctype html>
@@ -20,22 +31,69 @@ const currentLangLabel = lang === 'it' ? 'IT' : 'EN';
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content={description} />
+    <meta name="generator" content={Astro.generator} />
+
     <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="author" content="onData" />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#ff385c" />
+
+    <link rel="canonical" href={canonical} />
+    <link rel="alternate" hreflang="en" href={enUrl} />
+    <link rel="alternate" hreflang="it" href={itUrl} />
+    <link rel="alternate" hreflang="x-default" href={enUrl} />
+
     <link rel="icon" type="image/svg+xml" href={`${base}/favicon.svg`} />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={siteName} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={siteName} />
+    <meta property="og:locale" content={ogLocale} />
+    <meta property="og:locale:alternate" content={ogLocaleAlt} />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+    <meta name="twitter:image:alt" content={siteName} />
+
+    <!-- JSON-LD -->
+    <script type="application/ld+json" set:html={JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'SoftwareApplication',
+      name: siteName,
+      description: description,
+      url: canonical,
+      applicationCategory: 'DeveloperApplication',
+      operatingSystem: 'Cross-platform',
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+      author: { '@type': 'Organization', name: 'onData', url: 'https://ondata.it' },
+      codeRepository: 'https://github.com/ondata/istat_mcp_server',
+      license: 'https://opensource.org/licenses/MIT',
+      inLanguage: lang,
+    })} />
   </head>
   <body>
     <header class="site-header">
       <div class="inner">
-        <a href={homeHref} class="brand">
+        <a href={homePath} class="brand">
           <span class="brand-dot"></span>
           ISTAT MCP Server
         </a>
         <nav class="nav-links">
           <a href="https://github.com/ondata/istat_mcp_server" target="_blank" rel="noopener">GitHub</a>
           <div class="lang-switch">
-            <a href={homeHref} class="active">{currentLangLabel}</a>
-            <a href={otherLangHref}>{otherLangLabel}</a>
+            <a href={homePath} class="active">{currentLangLabel}</a>
+            <a href={otherLangPath}>{otherLangLabel}</a>
           </div>
         </nav>
       </div>

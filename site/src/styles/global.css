@@ -118,8 +118,13 @@ p {
   gap: 10px;
   font-weight: 700;
   font-size: 1.125rem;
-  color: var(--rausch);
+  color: var(--text);
   letter-spacing: -0.3px;
+  min-height: 44px;
+}
+
+.brand:hover {
+  color: var(--rausch);
 }
 
 .brand-dot {
@@ -132,9 +137,16 @@ p {
 
 .nav-links {
   display: flex;
-  gap: 20px;
+  gap: 16px;
   align-items: center;
   font-size: 0.875rem;
+}
+
+.nav-links > a {
+  padding: 10px 4px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
 }
 
 .lang-switch {
@@ -149,9 +161,13 @@ p {
 }
 
 .lang-switch a {
-  padding: 6px 12px;
+  padding: 10px 14px;
   border-radius: 999px;
   color: var(--text);
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .lang-switch a.active {
