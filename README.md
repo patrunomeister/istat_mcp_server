@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/ondata-istat-mcp-server-badge.png)](https://mseep.ai/app/ondata-istat-mcp-server)
+
 [![deepwiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ondata/istat_mcp_server)
 [![Newsletter](https://img.shields.io/badge/newsletter-ondata-FF6719?logo=substack)](https://ondata.substack.com/)
 
