@@ -428,6 +428,12 @@ curl -H "Accept: application/vnd.sdmx.structure+json; version=1.0" \
 curl "https://esploradati.istat.it/SDMXWS/rest/availableconstraint/{dataflow_id}/all/all?mode=available"
 ```
 
+## Related tools
+
+- **[opensituas](https://github.com/ondata/opensituas)** — Codes and history of every Italian territorial unit, from the CLI. The join key for any ISTAT dataset.
+- **[opensdmx](https://github.com/ondata/opensdmx)** — Official statistics from Eurostat, ISTAT, OECD, and other SDMX providers — no hallucinations, only published figures.
+- **[CKAN MCP Server](https://github.com/ondata/ckan-mcp-server)** — Turn any CKAN open data portal into a natural-language conversation.
+
 ## License
 
 MIT License
